@@ -9,11 +9,14 @@ venv/
 # Environment
 .env
 .env.*
+# ...but the template carries no secrets and every contributor needs it.
+!.env.example
 
 # Node
 node_modules/
 dist/
 build/
+*.tsbuildinfo
 
 # macOS
 .DS_Store
