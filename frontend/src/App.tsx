@@ -1,12 +1,15 @@
 import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
+import ErrorBoundary from "./components/ErrorBoundary";
 import NavSearch from "./components/NavSearch";
 import AdminLayout from "./pages/AdminLayout";
 import AdminMatchesPage from "./pages/AdminMatchesPage";
 import AdminPlayersPage from "./pages/AdminPlayersPage";
 import AdminSeasonRosterPage from "./pages/AdminSeasonRosterPage";
 import AdminSeasonsPage from "./pages/AdminSeasonsPage";
+import AdminSitePage from "./pages/AdminSitePage";
 import HomePage from "./pages/HomePage";
+import NotFoundPage from "./pages/NotFoundPage";
 import PlayerDetailPage from "./pages/PlayerDetailPage";
 import PlayersPage from "./pages/PlayersPage";
 import SeasonDetailPage from "./pages/SeasonDetailPage";
@@ -34,21 +37,40 @@ export default function App() {
         {!isAdminRoute && <NavSearch />}
       </nav>
       <main className="app__main">
-        <Routes>
-          <Route path="/" element={<HomePage />} />
-          <Route path="/players" element={<PlayersPage />} />
-          <Route path="/players/:playerId" element={<PlayerDetailPage />} />
-          <Route path="/seasons" element={<SeasonsPage />} />
-          <Route path="/seasons/:seasonId" element={<SeasonDetailPage />} />
-          <Route path="/admin" element={<AdminLayout />}>
-            <Route index element={<Navigate to="players" replace />} />
-            <Route path="players" element={<AdminPlayersPage />} />
-            <Route path="seasons" element={<AdminSeasonsPage />} />
-            <Route path="seasons/:seasonId" element={<AdminSeasonRosterPage />} />
-            <Route path="matches" element={<AdminMatchesPage />} />
-          </Route>
-        </Routes>
+        {/* Inside the router so the boundary's recovery links can navigate. */}
+        <ErrorBoundary>
+          <Routes>
+            <Route path="/" element={<HomePage />} />
+            <Route path="/players" element={<PlayersPage />} />
+            <Route path="/players/:playerId" element={<PlayerDetailPage />} />
+            <Route path="/seasons" element={<SeasonsPage />} />
+            <Route path="/seasons/:seasonId" element={<SeasonDetailPage />} />
+            <Route path="/admin" element={<AdminLayout />}>
+              <Route index element={<Navigate to="players" replace />} />
+              <Route path="players" element={<AdminPlayersPage />} />
+              <Route path="seasons" element={<AdminSeasonsPage />} />
+              <Route path="seasons/:seasonId" element={<AdminSeasonRosterPage />} />
+              <Route path="matches" element={<AdminMatchesPage />} />
+              <Route path="site" element={<AdminSitePage />} />
+            </Route>
+            <Route path="*" element={<NotFoundPage />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
+      <footer className="app__footer">
+        <p>
+          Pokémon and Pokémon character names are trademarks of Nintendo, Creatures Inc. and
+          GAME FREAK Inc. This is an unofficial, non-commercial fan project and is not affiliated
+          with or endorsed by them.
+        </p>
+        <p>
+          Sprites courtesy of{" "}
+          <a href="https://pokeapi.co/" target="_blank" rel="noreferrer noopener">
+            PokeAPI
+          </a>
+          .
+        </p>
+      </footer>
     </div>
   );
 }

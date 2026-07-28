@@ -6,9 +6,17 @@ from app.schemas.announcement import AnnouncementRead
 from app.schemas.player import PlayerSummary
 
 
-class HomeStream(BaseModel):
+class HomeLink(BaseModel):
+    """A resolved home-page link.
+
+    `external` tells the client whether to render a router link or an outbound
+    anchor - the standings link points inside the site by default, but becomes
+    an outbound URL once an admin pins one.
+    """
+
     url: str
     label: str
+    external: bool = True
 
 
 class HomeSeasonInfo(BaseModel):
@@ -21,5 +29,8 @@ class HomeSeasonInfo(BaseModel):
 
 class HomeResponse(BaseModel):
     announcements: list[AnnouncementRead]
-    latest_stream: HomeStream | None
+    # Each is the admin's pinned override, or the derived default.
+    latest_stream: HomeLink | None
+    document: HomeLink | None
+    table: HomeLink | None
     current_season: HomeSeasonInfo | None

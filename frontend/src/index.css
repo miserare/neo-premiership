@@ -1358,3 +1358,90 @@ table,
   flex: 1;
   min-width: 11rem;
 }
+
+.admin-score-row {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.admin-score-row input {
+  width: 5rem;
+}
+
+.admin-score-row span {
+  color: var(--text-muted);
+}
+
+/* ========================= Footer / 404 / errors ========================= */
+
+.app__footer {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--s5) var(--s5) var(--s6);
+  border-top: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  line-height: 1.5;
+}
+
+.app__footer p {
+  margin: 0 0 var(--s1);
+  max-width: 80ch;
+}
+
+@media (max-width: 700px) {
+  .app__footer {
+    padding: var(--s4) var(--s3);
+  }
+}
+
+/* Shared by the 404 page and the error boundary. */
+.error-page {
+  padding: var(--s6) 0;
+  max-width: 60ch;
+}
+
+.error-page__code {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--gold);
+  margin: 0 0 var(--s2);
+}
+
+.error-page h1 {
+  font-size: 1.9rem;
+  margin-bottom: var(--s3);
+}
+
+.error-page p {
+  color: var(--text-muted);
+}
+
+.error-page__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  margin-top: var(--s4);
+}
+
+.error-page__button {
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.error-page__button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  text-decoration: none;
+}

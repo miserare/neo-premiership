@@ -83,6 +83,7 @@ export default function AdminLayout() {
           <NavLink to="/admin/players">Players</NavLink>
           <NavLink to="/admin/seasons">Seasons</NavLink>
           <NavLink to="/admin/matches">Matches</NavLink>
+          <NavLink to="/admin/site">Site</NavLink>
         </nav>
         <button type="button" className="admin-page__sign-out" onClick={clearToken}>
           Sign out

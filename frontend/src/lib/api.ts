@@ -1,4 +1,7 @@
 import type {
+  AnnouncementCreateInput,
+  AnnouncementRead,
+  AnnouncementUpdateInput,
   HomeResponse,
   MatchCreateInput,
   MatchGameInput,
@@ -16,6 +19,8 @@ import type {
   SeasonEntryUpdateInput,
   SeasonSummary,
   SeasonUpdateInput,
+  SiteLinks,
+  SiteLinksInput,
 } from "../types";
 
 const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
@@ -183,6 +188,23 @@ export const api = {
   },
   home: {
     get: (): Promise<HomeResponse> => request<HomeResponse>("/home"),
+  },
+  announcements: {
+    list: (): Promise<AnnouncementRead[]> => request<AnnouncementRead[]>("/announcements"),
+    create: (input: AnnouncementCreateInput): Promise<AnnouncementRead> =>
+      request<AnnouncementRead>("/announcements", { method: "POST", body: JSON.stringify(input) }),
+    update: (id: string, input: AnnouncementUpdateInput): Promise<AnnouncementRead> =>
+      request<AnnouncementRead>(`/announcements/${id}`, {
+        method: "PATCH",
+        body: JSON.stringify(input),
+      }),
+    delete: (id: string): Promise<void> =>
+      request<void>(`/announcements/${id}`, { method: "DELETE" }),
+  },
+  siteLinks: {
+    get: (): Promise<SiteLinks> => request<SiteLinks>("/site-links"),
+    set: (input: SiteLinksInput): Promise<SiteLinks> =>
+      request<SiteLinks>("/site-links", { method: "PUT", body: JSON.stringify(input) }),
   },
   admin: {
     /** Resolves if `token` is accepted; throws ApiError (401 wrong token,

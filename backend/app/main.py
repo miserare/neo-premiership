@@ -2,7 +2,15 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
-from app.routers import admin, announcements, home, matches, players, seasons
+from app.routers import (
+    admin,
+    announcements,
+    home,
+    matches,
+    players,
+    seasons,
+    site_links,
+)
 
 app = FastAPI(title=settings.project_name, version="0.1.0")
 
@@ -20,6 +28,7 @@ app.include_router(matches.router, prefix="/api")
 app.include_router(announcements.router, prefix="/api")
 app.include_router(home.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
+app.include_router(site_links.router, prefix="/api")
 
 
 @app.get("/health", tags=["health"])

@@ -2,9 +2,29 @@ import { Link } from "react-router-dom";
 
 import ExternalLink from "../components/ExternalLink";
 import { useHome } from "../hooks/useHome";
+import type { HomeLink } from "../types";
 
 function formatDate(iso: string): string {
   return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/** The standings link points inside the site by default, but an admin can pin
+ * an outbound URL - so the element depends on the link, not the card. */
+function LinkCard({ heading, link, empty }: { heading: string; link: HomeLink | null; empty: string }) {
+  return (
+    <div className="home-page__link-card">
+      <h2>{heading}</h2>
+      {link ? (
+        link.external ? (
+          <ExternalLink href={link.url}>{link.label}</ExternalLink>
+        ) : (
+          <Link to={link.url}>{link.label}</Link>
+        )
+      ) : (
+        <p>{empty}</p>
+      )}
+    </div>
+  );
 }
 
 export default function HomePage() {
@@ -40,30 +60,9 @@ export default function HomePage() {
       {!isLoading && !error && data && (
         <>
           <section className="home-page__links">
-            <div className="home-page__link-card">
-              <h2>Latest stream</h2>
-              {data.latest_stream ? (
-                <ExternalLink href={data.latest_stream.url}>{data.latest_stream.label}</ExternalLink>
-              ) : (
-                <p>No streams yet.</p>
-              )}
-            </div>
-            <div className="home-page__link-card">
-              <h2>Season sheet</h2>
-              {season?.sheet_url ? (
-                <ExternalLink href={season.sheet_url}>{season.name} Google Sheet</ExternalLink>
-              ) : (
-                <p>No sheet linked yet.</p>
-              )}
-            </div>
-            <div className="home-page__link-card">
-              <h2>Standings</h2>
-              {season ? (
-                <Link to={`/seasons/${season.id}`}>View {season.name} table</Link>
-              ) : (
-                <p>Not available yet.</p>
-              )}
-            </div>
+            <LinkCard heading="Latest stream" link={data.latest_stream} empty="No streams yet." />
+            <LinkCard heading="League document" link={data.document} empty="No document linked yet." />
+            <LinkCard heading="Table" link={data.table} empty="Not available yet." />
           </section>
 
           {season && (

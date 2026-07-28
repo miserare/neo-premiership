@@ -307,6 +307,8 @@ function MatchEditor({ match, homePool, awayPool, onSaved }: MatchEditorProps) {
   const [roundLabel, setRoundLabel] = useState(match.round_label ?? "");
   const [scheduledAt, setScheduledAt] = useState(toLocalInput(match.scheduled_at));
   const [completedAt, setCompletedAt] = useState(toLocalInput(match.completed_at));
+  const [homeScore, setHomeScore] = useState(match.home_score === null ? "" : String(match.home_score));
+  const [awayScore, setAwayScore] = useState(match.away_score === null ? "" : String(match.away_score));
   const [youtubeUrl, setYoutubeUrl] = useState(match.youtube_url ?? "");
   const [detailsError, setDetailsError] = useState<string | null>(null);
   const [detailsSaved, setDetailsSaved] = useState(false);
@@ -342,6 +344,8 @@ function MatchEditor({ match, homePool, awayPool, onSaved }: MatchEditorProps) {
         round_label: roundLabel.trim() || null,
         scheduled_at: fromLocalInput(scheduledAt),
         completed_at: fromLocalInput(completedAt),
+        home_score: homeScore.trim() === "" ? null : Number(homeScore),
+        away_score: awayScore.trim() === "" ? null : Number(awayScore),
         youtube_url: youtubeUrl.trim() || null,
       });
       setDetailsSaved(true);
@@ -437,6 +441,32 @@ function MatchEditor({ match, homePool, awayPool, onSaved }: MatchEditorProps) {
             value={completedAt}
             onChange={(event) => setCompletedAt(event.target.value)}
           />
+        </div>
+        <div className="admin-form__row">
+          <label htmlFor={`hs-${match.id}`}>
+            Score ({match.home_player.username} - {match.away_player.username})
+          </label>
+          <div className="admin-score-row">
+            <input
+              id={`hs-${match.id}`}
+              type="number"
+              min={0}
+              value={homeScore}
+              onChange={(event) => setHomeScore(event.target.value)}
+              aria-label={`${match.home_player.username} score`}
+            />
+            <span>-</span>
+            <input
+              type="number"
+              min={0}
+              value={awayScore}
+              onChange={(event) => setAwayScore(event.target.value)}
+              aria-label={`${match.away_player.username} score`}
+            />
+          </div>
+          <p className="admin-form__hint">
+            Leave blank for a multi-game series - its score comes from the games below.
+          </p>
         </div>
         <div className="admin-form__row">
           <label htmlFor={`yt-${match.id}`}>Video (YouTube) URL</label>

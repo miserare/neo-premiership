@@ -5,6 +5,7 @@ from app.models.player import Player
 from app.models.pokemon import MatchPokemon, SeasonRosterPokemon
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
+from app.models.site_links import SiteLinks
 
 __all__ = [
     "Announcement",
@@ -17,4 +18,5 @@ __all__ = [
     "Season",
     "SeasonEntry",
     "SeasonRosterPokemon",
+    "SiteLinks",
 ]

@@ -53,7 +53,10 @@ function MatchRow({ match, perspectiveId }: { match: MatchRead; perspectiveId: s
           <span
             className={won ? "match-row__result match-row__result--win" : "match-row__result match-row__result--loss"}
           >
-            {won ? "Win" : "Loss"} {ownScore ?? "-"}-{opponentScore ?? "-"}
+            {/* A match with no recorded score reads as a bare Win/Loss rather
+                than a placeholder-filled "Win - -". */}
+            {won ? "Win" : "Loss"}
+            {ownScore !== null && opponentScore !== null && ` ${ownScore}-${opponentScore}`}
           </span>
         )}
         <span className="match-row__date">

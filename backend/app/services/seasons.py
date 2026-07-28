@@ -3,8 +3,8 @@ from datetime import date, datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.crud import matches as match_crud
-from app.crud import seasons as season_crud
 from app.crud import season_entries as season_entry_crud
+from app.crud import seasons as season_crud
 from app.models.match import MatchStage
 from app.models.season import Season
 from app.schemas.player import PlayerSummary

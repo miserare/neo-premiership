@@ -12,7 +12,13 @@ async def test_home_empty_database(client: AsyncClient) -> None:
     response = await client.get("/api/home")
 
     assert response.status_code == 200
-    assert response.json() == {"announcements": [], "latest_stream": None, "current_season": None}
+    assert response.json() == {
+        "announcements": [],
+        "latest_stream": None,
+        "document": None,
+        "table": None,
+        "current_season": None,
+    }
 
 
 async def test_home_active_season_roster(client: AsyncClient, db_session: AsyncSession) -> None:

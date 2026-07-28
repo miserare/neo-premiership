@@ -6,7 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import require_admin
 from app.crud import announcements as crud
 from app.database import get_db
-from app.schemas.announcement import AnnouncementCreate, AnnouncementRead, AnnouncementUpdate
+from app.schemas.announcement import (
+    AnnouncementCreate,
+    AnnouncementRead,
+    AnnouncementUpdate,
+)
 
 router = APIRouter(prefix="/announcements", tags=["announcements"])
 

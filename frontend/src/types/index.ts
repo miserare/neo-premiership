@@ -280,10 +280,42 @@ export interface SeasonDetail {
   streams: SeasonStream[];
 }
 
-// Mirrors backend/app/schemas/home.py::HomeStream
-export interface HomeStream {
+// Mirrors backend/app/schemas/home.py::HomeLink
+// `external` is false for the in-site standings link, true once an admin pins
+// an outbound URL - the component switches between Link and ExternalLink on it.
+export interface HomeLink {
   url: string;
   label: string;
+  external: boolean;
+}
+
+// Mirrors backend/app/schemas/site_links.py::SiteLinksRead
+export interface SiteLinks {
+  stream_url: string | null;
+  stream_label: string | null;
+  document_url: string | null;
+  document_label: string | null;
+  table_url: string | null;
+  table_label: string | null;
+}
+
+// Mirrors backend/app/schemas/site_links.py::SiteLinksUpdate
+export type SiteLinksInput = SiteLinks;
+
+// Mirrors backend/app/schemas/announcement.py::AnnouncementCreate
+export interface AnnouncementCreateInput {
+  title: string;
+  body: string;
+  published_at?: string | null;
+  link_url?: string | null;
+}
+
+// Mirrors backend/app/schemas/announcement.py::AnnouncementUpdate
+export interface AnnouncementUpdateInput {
+  title?: string;
+  body?: string;
+  published_at?: string | null;
+  link_url?: string | null;
 }
 
 // Mirrors backend/app/schemas/home.py::HomeSeasonInfo
@@ -298,6 +330,8 @@ export interface HomeSeasonInfo {
 // Mirrors backend/app/schemas/home.py::HomeResponse
 export interface HomeResponse {
   announcements: AnnouncementRead[];
-  latest_stream: HomeStream | null;
+  latest_stream: HomeLink | null;
+  document: HomeLink | null;
+  table: HomeLink | null;
   current_season: HomeSeasonInfo | null;
 }
