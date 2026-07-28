@@ -1,0 +1,1360 @@
+/* ==========================================================================
+   Pokémon Premiership - dark league theme
+   Palette derived from the club mark (deep purple #3E1A57, silver, gold
+   #FCCB04) over near-black surfaces, in the manner of the Premier League's
+   dark mode. Every text pairing below is checked against WCAG AA:
+     text on bg 17.9:1 | muted on bg 7.8:1 | accent on surface 5.2:1
+     win 10.7:1 | loss 6.9:1 | gold 12.3:1 | control borders 3.8:1
+   Rule of thumb: only --text goes on a purple fill, never --text-muted.
+   ========================================================================== */
+
+@font-face {
+  font-family: "Jost";
+  /* Variable axis - the range must be declared or only 400 is reachable. */
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+  src: url("/fonts/jost-variable.woff2") format("woff2");
+}
+
+:root {
+  /* Surfaces */
+  --bg: #0b0611;
+  --surface: #160d1f;
+  --surface-2: #1f1329;
+  --border: #3a2a4a;
+  /* Form controls are UI components and need 3:1, unlike hairline dividers. */
+  --border-strong: #7a6a8c;
+
+  /* Brand */
+  --brand: #3e1a57;
+  --brand-bright: #642d8f;
+  --accent: #a56be0;
+  --gold: #fccb04;
+
+  /* Text */
+  --text: #f4f1f7;
+  --text-muted: #a79db4;
+
+  /* Status */
+  --win: #3ddc97;
+  --loss: #ff6b7a;
+
+  /* Space scale - deliberately tight for a dense, results-table feel. */
+  --s1: 0.25rem;
+  --s2: 0.5rem;
+  --s3: 0.75rem;
+  --s4: 1rem;
+  --s5: 1.5rem;
+  --s6: 2rem;
+
+  --radius: 6px;
+  --maxw: 1240px;
+
+  /* Tells the browser to paint native selects, date pickers and scrollbars
+     dark - without it the admin date/time controls render as light widgets. */
+  color-scheme: dark;
+  font-family: "Jost", "Century Gothic", "URW Gothic", "Avant Garde", system-ui, sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+h1,
+h2,
+h3 {
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+  font-weight: 600;
+  margin: 0 0 var(--s3);
+}
+
+h1 {
+  font-size: 1.75rem;
+}
+
+h2 {
+  font-size: 1.15rem;
+}
+
+h3 {
+  font-size: 1rem;
+}
+
+p {
+  margin: 0 0 var(--s3);
+}
+
+/* Section headings read as league-table captions: small, upper, purple rule. */
+section > h2 {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  font-weight: 600;
+  padding-bottom: var(--s2);
+  border-bottom: 2px solid var(--brand);
+  margin-bottom: var(--s3);
+}
+
+section {
+  margin-bottom: var(--s5);
+}
+
+/* Native dropdown panels don't inherit page colours in several browsers. */
+option {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+/* Scores, records and ratings must not jitter between rows. */
+table,
+.match-row__result,
+.player-season-card__record,
+.admin-match-card__meta,
+.bracket-match__competitor span {
+  font-variant-numeric: tabular-nums;
+}
+
+/* ============================== Masthead ================================= */
+
+.app__nav {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3) var(--s5);
+  padding: var(--s3) var(--s5);
+  background: var(--bg);
+  border-bottom: 1px solid var(--border);
+  /* A thin brand rule under the masthead, as on club sites. */
+  box-shadow: inset 0 -3px 0 -1px var(--brand);
+}
+
+.app__nav-links {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s5);
+}
+
+.app__nav a {
+  color: var(--text-muted);
+  font-weight: 500;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: var(--s1) 0;
+  border-bottom: 2px solid transparent;
+}
+
+.app__nav a:hover {
+  color: var(--text);
+  text-decoration: none;
+  border-bottom-color: var(--accent);
+}
+
+.app__brand {
+  display: flex;
+  align-items: center;
+  gap: var(--s2);
+  color: var(--text) !important;
+  font-size: 1rem !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em !important;
+  text-transform: none !important;
+  border-bottom: none !important;
+}
+
+.app__brand-mark {
+  /* The mark's crown is deep purple, so it needs the near-black backdrop -
+     never place it on a --brand fill or the crown disappears. */
+  width: 38px;
+  height: auto;
+  display: block;
+}
+
+.app__main {
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: var(--s5);
+}
+
+@media (max-width: 700px) {
+  .app__nav,
+  .app__main {
+    padding: var(--s3);
+  }
+
+  .app__nav-links {
+    gap: var(--s2) var(--s4);
+  }
+
+  /* Give the wordmark its own row so the section links wrap together instead
+     of one of them orphaning onto a line of its own. */
+  .app__brand {
+    flex-basis: 100%;
+  }
+
+  h1 {
+    font-size: 1.4rem;
+  }
+
+  .home-page__hero {
+    padding: var(--s4);
+  }
+
+  .home-page__hero h1 {
+    font-size: 1.7rem;
+  }
+}
+
+/* ============================ Top-bar search ============================= */
+
+.nav-search {
+  display: flex;
+  gap: var(--s2);
+  align-items: center;
+}
+
+.nav-search__label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.nav-search__input {
+  padding: 0.35rem 0.65rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  width: 14rem;
+  min-width: 0;
+}
+
+.nav-search__input::placeholder {
+  color: var(--text-muted);
+}
+
+.nav-search__button {
+  padding: 0.35rem 0.85rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--brand-bright);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.nav-search__button:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+@media (max-width: 700px) {
+  .nav-search {
+    width: 100%;
+  }
+
+  .nav-search__input {
+    flex: 1;
+    width: auto;
+  }
+}
+
+/* ============================== Primitives =============================== */
+
+.badge {
+  display: inline-block;
+  padding: 0.1rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  border: 1px solid transparent;
+}
+
+.badge--active {
+  background: rgba(61, 220, 151, 0.14);
+  border-color: rgba(61, 220, 151, 0.4);
+  color: var(--win);
+}
+
+.badge--inactive {
+  background: var(--surface-2);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+/* Flat panels defined by a lift + hairline. Drop shadows are invisible on a
+   near-black page and read as floating cards rather than a results board. */
+.season-card,
+.announcement-card,
+.home-page__link-card,
+.player-season-card,
+.season-roster-card,
+.admin-match-card,
+.match-row,
+.bracket-match,
+.pokemon-picker,
+.admin-form {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+/* ================================ Tables ================================= */
+
+.players-table,
+.standings-table {
+  width: 100%;
+  border-collapse: collapse;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  margin-bottom: var(--s4);
+  font-size: 0.9rem;
+}
+
+.players-table th,
+.standings-table th {
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  background: var(--brand);
+  color: var(--text);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  white-space: nowrap;
+}
+
+.players-table td,
+.standings-table td {
+  text-align: left;
+  padding: var(--s2) var(--s3);
+  border-top: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.players-table tbody tr:hover,
+.standings-table tbody tr:hover {
+  background: var(--surface-2);
+}
+
+@media (max-width: 700px) {
+  .players-table,
+  .standings-table {
+    font-size: 0.85rem;
+  }
+
+  .players-table th,
+  .players-table td,
+  .standings-table th,
+  .standings-table td {
+    padding: var(--s2);
+  }
+}
+
+.players-page__error,
+.player-page__error,
+.seasons-page__error,
+.season-page__error,
+.home-page__error,
+.admin-page__error {
+  color: var(--loss);
+}
+
+.players-page__filter,
+.seasons-page__filter {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ================================= Home ================================== */
+
+.home-page__hero {
+  padding: var(--s5);
+  margin-bottom: var(--s5);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  /* Brand wash rather than a flat fill, so the mark and text stay legible. */
+  background:
+    radial-gradient(120% 140% at 0% 0%, rgba(100, 45, 143, 0.55) 0%, transparent 60%),
+    linear-gradient(180deg, var(--brand) 0%, var(--surface) 100%);
+}
+
+.home-page__eyebrow {
+  margin: 0 0 var(--s1);
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--gold);
+}
+
+.home-page__hero h1 {
+  font-size: 2.1rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: var(--s3);
+}
+
+.home-page__hero p {
+  color: var(--text);
+  opacity: 0.85;
+  margin: 0;
+  max-width: 52ch;
+}
+
+.home-page__hero-season {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s2);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.home-page__hero-season a {
+  color: var(--text);
+}
+
+.home-page__hero-season a:hover {
+  color: var(--gold);
+}
+
+.home-page__season-label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.home-page__roster-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2);
+}
+
+.home-page__roster-list li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.2rem 0.8rem;
+  font-size: 0.85rem;
+}
+
+.home-page__roster-list li:hover {
+  border-color: var(--accent);
+}
+
+.home-page__links {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--s3);
+}
+
+.home-page__link-card {
+  padding: var(--s3) var(--s4);
+}
+
+.home-page__link-card h2 {
+  margin: 0 0 var(--s1);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.home-page__link-card p {
+  margin: 0;
+  color: var(--text-muted);
+}
+
+.home-page__announcement-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.announcement-card {
+  padding: var(--s3) var(--s4);
+  /* Gold marker ties announcements to the mark's accent. */
+  border-left: 3px solid var(--gold);
+}
+
+.announcement-card h3 {
+  margin: 0 0 0.1rem;
+  font-size: 1rem;
+}
+
+.announcement-card__date {
+  color: var(--text-muted);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin: 0 0 var(--s2);
+}
+
+.announcement-card p:last-child {
+  margin: 0;
+}
+
+/* ============================= Player detail ============================= */
+
+.player-page__header {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+}
+
+.player-page__header h1 {
+  margin: 0;
+}
+
+.player-page__stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: var(--s2);
+  margin: 0 0 var(--s5);
+}
+
+.player-page__stats > div {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: var(--s3);
+}
+
+.player-page__stats dt {
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.player-page__stats dd {
+  margin: var(--s1) 0 0;
+  font-size: 1.4rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.player-page__seasons {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.player-season-card {
+  padding: var(--s3) var(--s4);
+}
+
+.player-season-card__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s3);
+  margin-bottom: var(--s2);
+  font-weight: 600;
+}
+
+.player-season-card__record {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* ============================== Match rows =============================== */
+
+.match-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.match-row {
+  padding: var(--s2) var(--s3);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2) var(--s3);
+}
+
+.match-row__main {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.match-row__opponent {
+  font-weight: 500;
+}
+
+.match-row__result {
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.match-row__result--win {
+  color: var(--win);
+}
+
+.match-row__result--loss {
+  color: var(--loss);
+}
+
+.match-row__date {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.match-row__links,
+.bracket-match__links {
+  display: flex;
+  gap: var(--s3);
+  font-size: 0.85rem;
+}
+
+.match-series-links {
+  display: inline-flex;
+  gap: var(--s2);
+}
+
+.match-series-links a {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.match-series-links a:hover {
+  border-color: var(--accent);
+  text-decoration: none;
+}
+
+.match-row__teams,
+.bracket-match__teams {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.match-row__teams-divider {
+  color: var(--text-muted);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ============================ Seasons index ============================== */
+
+.seasons-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: var(--s3);
+}
+
+.season-card {
+  padding: var(--s3) var(--s4);
+}
+
+.season-card h2 {
+  margin: 0 0 var(--s1);
+  font-size: 1.05rem;
+}
+
+.season-card__dates {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 var(--s2);
+}
+
+.season-card__champion {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.9rem;
+  color: var(--gold);
+}
+
+/* ============================ Season detail ============================== */
+
+.season-page__header {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-bottom: var(--s1);
+}
+
+.season-page__header h1 {
+  margin: 0;
+}
+
+.season-page__dates {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: var(--s4);
+}
+
+.season-page__champion {
+  color: var(--gold);
+  font-weight: 600;
+}
+
+.season-page__overview {
+  max-width: 70ch;
+  color: var(--text-muted);
+}
+
+.season-page__group-label {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.season-page__streams {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+  font-size: 0.9rem;
+}
+
+.season-page__roster-cards {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+  gap: var(--s3);
+}
+
+.season-roster-card {
+  padding: var(--s3);
+}
+
+.season-roster-card__header {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin-bottom: var(--s2);
+  font-weight: 600;
+}
+
+.standings-group {
+  margin-bottom: var(--s4);
+}
+
+.standings-group h3 {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--s2);
+}
+
+/* ================================ Bracket ================================ */
+
+.bracket {
+  display: flex;
+  gap: var(--s4);
+  overflow-x: auto;
+  padding-bottom: var(--s2);
+}
+
+.bracket-round {
+  min-width: 230px;
+  flex: 1 0 230px;
+}
+
+.bracket-round h3 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: var(--s2);
+}
+
+.bracket-round__matches {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.bracket-match {
+  padding: var(--s2) var(--s3);
+}
+
+.bracket-match__competitor {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s2);
+  padding: 0.15rem 0;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+/* The advancing side is the one thing a bracket must communicate at a glance. */
+.bracket-match__competitor--winner {
+  font-weight: 700;
+  color: var(--text);
+}
+
+.bracket-match__competitor--winner span {
+  color: var(--gold);
+}
+
+.bracket-match__links {
+  margin-top: var(--s2);
+  padding-top: var(--s2);
+  border-top: 1px solid var(--border);
+}
+
+/* ============================ Pokémon sprites ============================ */
+
+.pokemon-sprite {
+  image-rendering: pixelated;
+  display: block;
+}
+
+.pokemon-team {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+/* Sprites carry near-black outlines, which vanish against the page. The raised
+   tile keeps dark species (Gengar, Tyranitar, Steelix) readable. */
+.pokemon-team__item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* Sized so a full four-Pokémon draft fits one row inside a roster card
+     rather than orphaning the last sprite onto a second line. */
+  width: 3.7rem;
+  padding: var(--s1);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.pokemon-team__name {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-align: center;
+  line-height: 1.2;
+  word-break: break-word;
+}
+
+.pokemon-team__empty {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+/* ============================= Pokémon picker ============================ */
+
+.pokemon-picker {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+  padding: var(--s3);
+}
+
+.pokemon-picker__label {
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+}
+
+.pokemon-picker__chosen,
+.pokemon-picker__results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s1);
+}
+
+.pokemon-picker__chip {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 0.15rem 0.45rem 0.15rem 0.15rem;
+  font-size: 0.8rem;
+}
+
+.pokemon-picker__chip button {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--loss);
+  padding: 0 0.2rem;
+}
+
+.pokemon-picker__search {
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.pokemon-picker__results button {
+  display: flex;
+  align-items: center;
+  gap: var(--s1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  padding: 0.15rem 0.45rem 0.15rem 0.15rem;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.pokemon-picker__results button:hover {
+  border-color: var(--accent);
+}
+
+.pokemon-picker__hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+/* ================================= Admin ================================= */
+
+.admin-page__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--s3);
+  margin-bottom: var(--s4);
+  padding-bottom: var(--s2);
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-page__nav {
+  display: flex;
+  gap: var(--s1);
+}
+
+.admin-page__nav a {
+  font-weight: 600;
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  padding: 0.3rem 0.7rem;
+  border-radius: var(--radius);
+}
+
+.admin-page__nav a:hover {
+  color: var(--text);
+  background: var(--surface-2);
+  text-decoration: none;
+}
+
+.admin-page__nav a.active {
+  background: var(--brand);
+  color: var(--text);
+}
+
+.admin-page__sign-out,
+.admin-players-page__actions button,
+.admin-players-page__actions a,
+.admin-match-card__actions button,
+.admin-game-row button,
+.admin-form--inline button {
+  padding: 0.3rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface-2);
+  color: var(--text);
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.admin-page__sign-out:hover,
+.admin-players-page__actions button:hover,
+.admin-players-page__actions a:hover,
+.admin-match-card__actions button:hover,
+.admin-game-row button:hover,
+.admin-form--inline button:hover {
+  border-color: var(--accent);
+  color: var(--text);
+  text-decoration: none;
+}
+
+.admin-players-page__actions {
+  display: flex;
+  gap: var(--s1);
+  flex-wrap: wrap;
+}
+
+/* Sign-in */
+
+.admin-token-form {
+  max-width: 420px;
+}
+
+.admin-token-form__label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: var(--s1);
+}
+
+.admin-token-form__row {
+  display: flex;
+  gap: var(--s2);
+}
+
+.admin-token-form__input {
+  flex: 1;
+  padding: 0.45rem 0.7rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-token-form__button {
+  padding: 0.45rem 1rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.admin-token-form__button:hover:not(:disabled) {
+  background: var(--text);
+}
+
+.admin-token-form__button:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Forms */
+
+.admin-form {
+  padding: var(--s4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+  max-width: 520px;
+  margin-bottom: var(--s4);
+}
+
+.admin-form h3 {
+  margin: 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.admin-form__row {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s1);
+}
+
+.admin-form__row--checkbox {
+  flex-direction: row;
+  align-items: center;
+}
+
+.admin-form label {
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.admin-form input,
+.admin-form select,
+.admin-form textarea {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.admin-form input[type="checkbox"] {
+  width: auto;
+  accent-color: var(--accent);
+}
+
+.admin-form textarea {
+  min-height: 4.5rem;
+  resize: vertical;
+}
+
+.admin-form__submit {
+  align-self: flex-start;
+  padding: 0.45rem 1rem;
+  border: none;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--bg);
+  font: inherit;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.admin-form__submit:hover:not(:disabled) {
+  background: var(--text);
+}
+
+.admin-form__submit:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.admin-form__error {
+  color: var(--loss);
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.admin-form__hint {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.admin-form__saved {
+  color: var(--win);
+  font-weight: 600;
+  margin: 0;
+  font-size: 0.85rem;
+}
+
+.admin-form--inline {
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  max-width: none;
+  border: none;
+  background: none;
+  padding: var(--s2) 0;
+  margin: 0;
+}
+
+.admin-form--inline input,
+.admin-form--inline select {
+  width: auto;
+}
+
+/* Admin matches */
+
+.admin-matches-page__season-select {
+  max-width: 300px;
+  margin-bottom: var(--s4);
+}
+
+.admin-matches-page__season-select select {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+}
+
+.admin-matches-page__season-select label {
+  font-weight: 600;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.admin-match-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s2);
+}
+
+.admin-match-card {
+  padding: var(--s3) var(--s4);
+}
+
+.admin-match-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s3);
+}
+
+.admin-match-card__meta {
+  display: block;
+  color: var(--text-muted);
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.admin-match-card__body {
+  margin-top: var(--s3);
+  border-top: 1px solid var(--border);
+  padding-top: var(--s3);
+  display: grid;
+  gap: var(--s3);
+}
+
+/* Nested panels sit directly on the card, so they drop their own chrome. */
+.admin-match-card__body .admin-form {
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  max-width: none;
+}
+
+.admin-match-card__actions {
+  display: flex;
+  gap: var(--s2);
+  flex-wrap: wrap;
+}
+
+.admin-game-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+}
+
+.admin-game-row__number {
+  font-weight: 700;
+  min-width: 1.8rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
+.admin-game-row select,
+.admin-game-row input[type="url"] {
+  padding: 0.35rem 0.55rem;
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  background: var(--bg);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+}
+
+.admin-game-row input[type="url"] {
+  flex: 1;
+  min-width: 11rem;
+}
