@@ -179,3 +179,75 @@ async def test_playoff_bracket_ordering(client: AsyncClient, db_session: AsyncSe
     assert [r["round_label"] for r in bracket] == ["Semifinal", "Final"]
     semifinal_matches = bracket[0]["matches"]
     assert [m["home_player"]["username"] for m in semifinal_matches] == ["BracketP1", "BracketP3"]
+
+
+async def test_set_draft_pool_accepts_alternate_forms(client: AsyncClient, db_session: AsyncSession) -> None:
+    """Alternate forms are stored by PokeAPI id, which runs to 10000+ for megas,
+    regional variants and Gigantamax - nothing may cap pokeapi_id to the 1-1025
+    national dex range."""
+    season = Season(name="Draft Forms Season", start_date=date(2024, 1, 1))
+    player = Player(username="DraftFormsTrainer")
+    db_session.add_all([season, player])
+    await db_session.flush()
+    entry = SeasonEntry(season_id=season.id, player_id=player.id)
+    db_session.add(entry)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/seasons/{season.id}/roster/{entry.id}/pokemon",
+        json={
+            "pokemon": [
+                {"pokeapi_id": 6, "species_name": "Charizard"},
+                {"pokeapi_id": 10034, "species_name": "Charizard (Mega X)"},
+                {"pokeapi_id": 10100, "species_name": "Raichu (Alolan)"},
+                {"pokeapi_id": 10229, "species_name": "Growlithe (Hisuian)"},
+            ]
+        },
+        headers=ADMIN_HEADERS,
+    )
+
+    assert response.status_code == 200
+    pool = response.json()["pokemon"]
+    assert [p["pokeapi_id"] for p in pool] == [6, 10034, 10100, 10229]
+    # Slots follow list order, so the pool keeps the draft order it was sent in.
+    assert [p["slot"] for p in pool] == [0, 1, 2, 3]
+    assert pool[1]["species_name"] == "Charizard (Mega X)"
+
+
+async def test_a_form_is_distinct_from_its_base_species(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """Charizard and Mega Charizard X are different ids, so drafting both is not
+    a duplicate."""
+    season = Season(name="Distinct Forms Season", start_date=date(2024, 1, 1))
+    player = Player(username="DistinctFormsTrainer")
+    db_session.add_all([season, player])
+    await db_session.flush()
+    entry = SeasonEntry(season_id=season.id, player_id=player.id)
+    db_session.add(entry)
+    await db_session.commit()
+
+    response = await client.put(
+        f"/api/seasons/{season.id}/roster/{entry.id}/pokemon",
+        json={
+            "pokemon": [
+                {"pokeapi_id": 6, "species_name": "Charizard"},
+                {"pokeapi_id": 10034, "species_name": "Charizard (Mega X)"},
+            ]
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert response.status_code == 200
+
+    # The same id twice is still rejected.
+    duplicate = await client.put(
+        f"/api/seasons/{season.id}/roster/{entry.id}/pokemon",
+        json={
+            "pokemon": [
+                {"pokeapi_id": 10034, "species_name": "Charizard (Mega X)"},
+                {"pokeapi_id": 10034, "species_name": "Charizard (Mega X)"},
+            ]
+        },
+        headers=ADMIN_HEADERS,
+    )
+    assert duplicate.status_code == 422

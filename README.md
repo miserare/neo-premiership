@@ -85,6 +85,29 @@ Tests run against in-memory SQLite for speed. Note that **SQLite does not
 enforce foreign keys**, so anything depending on `ON DELETE` behaviour — player
 deletion in particular — must also be checked against Postgres.
 
+## Pokémon catalogue
+
+The draft picker is backed by `frontend/src/data/pokemon.json` — 1340 entries
+covering every base species plus mega evolutions, regional variants, Gigantamax
+and other alternate forms. It is bundled rather than fetched so the picker works
+without a live PokeAPI call, and code-split so only admins download it.
+
+Entries are keyed on **PokeAPI's id, not the national dex number**, which is
+what lets forms resolve to their own sprite: Charizard is 6, Mega Charizard X is
+10034. Eleven ids in the form range have no sprite in the PokeAPI repo (Let's Go
+partner Pikachu/Eevee, Koraidon/Miraidon ride builds, a `zygarde-mega` that
+isn't a real form) and are excluded.
+
+To refresh it after a new generation is released:
+
+```bash
+curl -s "https://pokeapi.co/api/v2/pokemon?limit=100000" -o /tmp/all_pokemon.json
+curl -s "https://pokeapi.co/api/v2/pokemon-species?limit=100000" -o /tmp/species.json
+python backend/seeds/generate_pokemon_catalogue.py /tmp
+```
+
+The script fails loudly if a name would exceed the `species_name` column limit.
+
 ## Deployment
 
 `docker-compose.prod.yml` runs a production stack: a static frontend build

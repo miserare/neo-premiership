@@ -56,10 +56,18 @@ export default function PokemonPicker({
 
   const chosenIds = new Set(value.map((p) => p.pokeapi_id));
   const matches = useMemo(() => {
-    const needle = query.trim().toLowerCase();
     const pool = options.filter((s) => !chosenIds.has(s.id));
-    if (!needle) return allowedFrom ? pool : pool.slice(0, 0);
-    return pool.filter((s) => s.name.toLowerCase().includes(needle)).slice(0, 8);
+    // Every whitespace-separated word must appear somewhere in the name, in any
+    // order. With forms in the catalogue a name looks like "Charizard (Mega X)",
+    // so a plain substring match would miss "mega charizard".
+    const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return allowedFrom ? pool : pool.slice(0, 0);
+    return pool
+      .filter((s) => {
+        const name = s.name.toLowerCase();
+        return terms.every((term) => name.includes(term));
+      })
+      .slice(0, 12);
     // chosenIds is derived from `value`, which is already a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [options, query, value, allowedFrom]);
@@ -103,7 +111,11 @@ export default function PokemonPicker({
           <input
             type="search"
             className="pokemon-picker__search"
-            placeholder={allowedFrom ? "Filter this player's pool..." : "Type to find a Pokémon..."}
+            placeholder={
+              allowedFrom
+                ? "Filter this player's pool..."
+                : "Find a Pokémon - try \"mega charizard\" or \"galarian\""
+            }
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label={`Search Pokémon to add to ${label}`}

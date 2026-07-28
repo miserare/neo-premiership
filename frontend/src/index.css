@@ -892,6 +892,18 @@ table,
   display: block;
 }
 
+/* Stand-in for the few PokeAPI ids with no sprite, and for CDN failures. */
+.pokemon-sprite--fallback {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--brand);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
 .pokemon-team {
   list-style: none;
   padding: 0;
