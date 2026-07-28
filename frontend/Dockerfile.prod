@@ -1,0 +1,28 @@
+# Production image: a static build served by nginx.
+#
+# The dev image runs `vite dev`, which is a development server and must never
+# face the public internet. This builds the site once and serves the artifacts.
+
+FROM node:20-alpine AS build
+
+WORKDIR /app
+
+COPY package*.json ./
+RUN npm ci
+
+COPY . .
+
+# Baked in at build time, not runtime - Vite inlines import.meta.env during the
+# build. Empty by default, which makes the frontend call /api on its own origin
+# (the reverse proxy routes it to the backend), so there is no CORS to satisfy.
+ARG VITE_API_URL=""
+ENV VITE_API_URL=$VITE_API_URL
+
+RUN npm run build
+
+FROM nginx:1.27-alpine
+
+COPY --from=build /app/dist /usr/share/nginx/html
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
+EXPOSE 80

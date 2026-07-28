@@ -1,0 +1,35 @@
+# Caddy terminates TLS and puts the site and API on ONE origin.
+#
+# Certificates are obtained and renewed from Let's Encrypt automatically - no
+# certbot, no cron, no renewal script. Requirements: DOMAIN's DNS A/AAAA record
+# points at this server, and ports 80 and 443 are reachable from the internet
+# (80 is needed for the ACME challenge and the HTTP->HTTPS redirect).
+#
+# Because /api is served from the same origin as the site, the browser makes
+# same-origin requests: VITE_API_URL stays empty and CORS never comes into it.
+
+{$DOMAIN} {
+	encode gzip
+
+	# API first - more specific than the catch-all below.
+	handle /api/* {
+		reverse_proxy backend:8000
+	}
+
+	handle /health {
+		reverse_proxy backend:8000
+	}
+
+	handle {
+		reverse_proxy frontend:80
+	}
+
+	header {
+		# Tell browsers to stick to HTTPS for this host.
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+}

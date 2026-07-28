@@ -8,7 +8,10 @@ class Settings(BaseSettings):
     """Application configuration, sourced from environment variables / a .env file."""
 
     project_name: str = "Pokémon Premiership"
-    environment: str = "development"
+    # Defaults to production so a deployment that forgets to set ENVIRONMENT
+    # fails safe: development turns on SQLAlchemy's `echo`, which writes every
+    # query - and its bound parameters - to the logs.
+    environment: str = "production"
 
     database_url: str = "postgresql+asyncpg://neo_premiership:neo_premiership@localhost:5432/neo_premiership"
 
