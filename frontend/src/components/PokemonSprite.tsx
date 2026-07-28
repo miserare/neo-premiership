@@ -1,4 +1,7 @@
-const SPRITE_BASE = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon";
+// jsDelivr rather than raw.githubusercontent.com: raw is not a CDN, rate-limits
+// per IP, and sends no useful cache headers, while a single season view pulls
+// 24+ sprites. jsDelivr serves the same files with a 7-day cache and CORS.
+const SPRITE_BASE = "https://cdn.jsdelivr.net/gh/PokeAPI/sprites@master/sprites/pokemon";
 
 interface PokemonSpriteProps {
   pokeapiId: number;
