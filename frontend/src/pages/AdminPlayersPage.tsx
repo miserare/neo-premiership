@@ -2,7 +2,7 @@ import { type FormEvent, useState } from "react";
 
 import { useAsync } from "../hooks/useAsync";
 import { api, ApiError } from "../lib/api";
-import type { Player } from "../types";
+import type { PlayerAdmin } from "../types";
 
 interface PlayerFormState {
   username: string;
@@ -23,8 +23,8 @@ function toPlayerInput(form: PlayerFormState) {
 }
 
 export default function AdminPlayersPage() {
-  const { data: players, isLoading, error, refetch } = useAsync<Player[]>(
-    () => api.players.list({ limit: 500 }),
+  const { data: players, isLoading, error, refetch } = useAsync<PlayerAdmin[]>(
+    () => api.players.listAdmin({ limit: 500 }),
     [],
   );
 
@@ -49,7 +49,7 @@ export default function AdminPlayersPage() {
     }
   }
 
-  function startEdit(player: Player) {
+  function startEdit(player: PlayerAdmin) {
     setEditingId(player.id);
     setEditError(null);
     setEditForm({
@@ -73,7 +73,7 @@ export default function AdminPlayersPage() {
     }
   }
 
-  async function handleDelete(player: Player) {
+  async function handleDelete(player: PlayerAdmin) {
     if (!window.confirm(`Delete player "${player.username}"? This cannot be undone.`)) {
       return;
     }

@@ -43,7 +43,6 @@ def build_player_detail(player: Player, matches: list[Match], season_entries: li
     return PlayerDetail(
         id=player.id,
         username=player.username,
-        discord_id=player.discord_id,
         join_date=player.join_date,
         is_active=player.is_active,
         elo_rating=player.elo_rating,

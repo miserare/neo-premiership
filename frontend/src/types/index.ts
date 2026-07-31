@@ -7,14 +7,20 @@ export interface AdminSessionInfo {
   csrf_token: string;
 }
 
-// Mirrors backend/app/schemas/player.py::PlayerRead
+// Mirrors backend/app/schemas/player.py::PlayerPublic
+// No discord_id: anonymous responses never carry contact details.
 export interface Player {
   id: string;
   username: string;
-  discord_id: string | null;
   join_date: string;
   is_active: boolean;
   elo_rating: number;
+}
+
+// Mirrors backend/app/schemas/player.py::PlayerAdmin
+// Only returned from routes guarded by an administrator session.
+export interface PlayerAdmin extends Player {
+  discord_id: string | null;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerCreate
@@ -175,7 +181,6 @@ export interface MatchUpdateInput {
 export interface PlayerDetail {
   id: string;
   username: string;
-  discord_id: string | null;
   join_date: string;
   is_active: boolean;
   elo_rating: number;

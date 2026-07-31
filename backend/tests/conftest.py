@@ -5,6 +5,8 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
+import logging
+
 from app.database import Base, get_db
 from app.main import app
 from app.models.admin import AdminUser
@@ -44,6 +46,12 @@ async def _override_get_db() -> AsyncGenerator[AsyncSession, None]:
 
 
 app.dependency_overrides[get_db] = _override_get_db
+
+# The app configures DEBUG logging in development, which buries test failures
+# under thousands of SQL lines. Tests assert on responses, not on logs.
+logging.getLogger().setLevel(logging.WARNING)
+logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
+logging.getLogger("aiosqlite").setLevel(logging.WARNING)
 
 
 @pytest_asyncio.fixture(autouse=True)
