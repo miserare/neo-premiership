@@ -41,8 +41,22 @@ for secret in secrets/session_secret secrets/postgres_password; do
 done
 echo "  configuration and secrets OK (values not shown)"
 
-RELEASE=$(git rev-parse HEAD 2>/dev/null || echo "unknown")
-DIRTY=$(git status --porcelain 2>/dev/null | wc -l | tr -d ' ')
+# The deployed tree is a git archive export, so there is no .git here. The
+# exact commit is shipped in RELEASE by the transfer step. Fall back to git
+# only when deploying from a real checkout.
+#
+# Note the guards: `set -o pipefail` means a failing `git` inside a pipeline
+# aborts the whole script, so neither call may be piped unguarded.
+if [[ -f RELEASE ]]; then
+    RELEASE=$(cat RELEASE)
+    DIRTY=0
+elif git rev-parse --git-dir >/dev/null 2>&1; then
+    RELEASE=$(git rev-parse HEAD)
+    DIRTY=$(git status --porcelain | wc -l | tr -d ' ')
+else
+    RELEASE="unknown"
+    DIRTY=0
+fi
 echo "  release commit: $RELEASE"
 [[ "$DIRTY" == "0" ]] || echo "  WARNING: working tree has $DIRTY uncommitted change(s); this is not a reproducible release"
 
