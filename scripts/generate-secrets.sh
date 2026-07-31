@@ -13,6 +13,15 @@ set -euo pipefail
 SECRETS_DIR="${SECRETS_DIR:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/secrets}"
 ROTATE=0
 
+# Secret files stay mode 0600, but they must be owned by the uid the backend
+# container runs as, because Compose bind-mounts them with host ownership and
+# the app runs unprivileged. PostgreSQL is unaffected: its entrypoint starts as
+# root and reads the file before dropping to the postgres user.
+#
+# Owning them by an unmapped uid is also stricter on the host than owning them
+# by the deploy user - only root and that uid can read them.
+SECRET_UID="${SECRET_UID:-10001}"
+
 usage() {
     cat <<'EOF'
 Usage: generate-secrets.sh [--rotate NAME]
@@ -74,9 +83,19 @@ echo "Writing secrets to $SECRETS_DIR"
 write_secret session_secret
 write_secret postgres_password
 
+# Apply container-app ownership. Needs root, so skip cleanly when unavailable
+# (local development runs everything as one user anyway).
+if [ "$(id -u)" -eq 0 ]; then
+    chown "$SECRET_UID:$SECRET_UID" "$SECRETS_DIR"/* 2>/dev/null || true
+elif command -v sudo >/dev/null && sudo -n true 2>/dev/null; then
+    sudo chown "$SECRET_UID:$SECRET_UID" "$SECRETS_DIR"/* 2>/dev/null || true
+else
+    echo "  ! could not chown secrets to uid $SECRET_UID (no root); the backend container may not be able to read them"
+fi
+
 echo
 echo "Permissions:"
-ls -l "$SECRETS_DIR" | awk 'NR>1 {print "  " $1, $9}'
+ls -ln "$SECRETS_DIR" | awk 'NR>1 {print "  " $1, "uid="$3, $9}'
 echo
 echo "Done. No secret values were printed."
 echo "Next: docker compose -f docker-compose.prod.yml up -d --build"
