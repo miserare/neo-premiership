@@ -4,7 +4,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import pool
 # Use the async engine creator from SQLAlchemy
-from sqlalchemy.ext.asyncio import async_engine_from_config
+from sqlalchemy.ext.asyncio import create_async_engine
 
 # ==============================================================================
 # 1. IMPORT YOUR BASE & MODELS HERE
@@ -38,10 +38,11 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override the placeholder URL in alembic.ini with the real one from our
-# pydantic-settings config, so migrations always target the same database
-# the application itself connects to.
-config.set_main_option("sqlalchemy.url", settings.database_url)
+# NOTE: deliberately NOT config.set_main_option("sqlalchemy.url", ...).
+# That routes the value through configparser interpolation, so a '%' in a
+# URL-encoded password raises ValueError - and the exception message contains
+# the full URL, printing the password into the logs. The engine is built
+# directly from settings instead.
 
 # Provide Alembic access to your models' metadata
 target_metadata = Base.metadata
@@ -59,12 +60,9 @@ def do_run_migrations(connection):
 async def run_migrations_online():
     """Run migrations in 'online' mode using an async engine."""
     
-    # Read configuration and create the async engine
-    connectable = async_engine_from_config(
-        config.get_section(config.config_ini_section, {}),
-        prefix="sqlalchemy.",
-        poolclass=pool.NullPool,
-    )
+    # Built straight from settings, so the URL never passes through
+    # configparser and the password cannot end up in an interpolation error.
+    connectable = create_async_engine(settings.database_url, poolclass=pool.NullPool)
 
     # Establish an async connection, then use run_sync to execute
     # our synchronous migration function inside the async context.
@@ -75,7 +73,7 @@ async def run_migrations_online():
 
 def run_migrations_offline():
     """Run migrations in 'offline' mode (e.g., generating SQL scripts)."""
-    url = config.get_main_option("sqlalchemy.url")
+    url = settings.database_url
     context.configure(
         url=url,
         target_metadata=target_metadata,
