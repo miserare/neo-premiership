@@ -1,76 +1,96 @@
 import { type FormEvent, useState } from "react";
 import { NavLink, Outlet } from "react-router-dom";
 
-import { useAdminToken } from "../hooks/useAdminToken";
-import { api, ApiError, getAuthFailureMessage } from "../lib/api";
+import { useAdminSession } from "../hooks/useAdminSession";
+import { ApiError, getAuthFailureMessage } from "../lib/api";
 
 export default function AdminLayout() {
-  const { token, saveToken, clearToken } = useAdminToken();
-  const [tokenInput, setTokenInput] = useState("");
+  const { session, isLoading, signIn, signOut } = useAdminSession();
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [signInError, setSignInError] = useState<string | null>(null);
-  const [isVerifying, setIsVerifying] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const candidate = tokenInput.trim();
-    if (!candidate) return;
+    if (!username.trim() || !password) return;
 
     setSignInError(null);
-    setIsVerifying(true);
+    setIsSubmitting(true);
     try {
-      // Check the token before storing it - otherwise any string "signs you in"
-      // and the first save is what discovers the token was wrong.
-      await api.admin.verify(candidate);
-      saveToken(candidate);
-      setTokenInput("");
+      await signIn(username.trim(), password);
+      // Never keep the password around after it has been exchanged for a session.
+      setPassword("");
     } catch (err) {
-      if (err instanceof ApiError && err.status === 503) {
-        setSignInError(`${err.message}. Set ADMIN_TOKEN in the backend environment and restart it.`);
+      if (err instanceof ApiError && err.status === 429) {
+        setSignInError("Too many failed attempts. Wait a few minutes and try again.");
       } else if (err instanceof ApiError && err.status === 401) {
-        setSignInError(`${err.message}. Check the ADMIN_TOKEN value the backend was started with.`);
+        // Mirrors the server's nondisclosing message: never reveal whether the
+        // username exists.
+        setSignInError("Invalid username or password.");
       } else if (err instanceof ApiError) {
         setSignInError(err.message);
       } else {
-        setSignInError("Could not reach the server to check that token.");
+        setSignInError("Could not reach the server. Check your connection.");
       }
+      setPassword("");
     } finally {
-      setIsVerifying(false);
+      setIsSubmitting(false);
     }
   }
 
-  if (!token) {
-    const rejectedMessage = getAuthFailureMessage();
+  if (isLoading) {
     return (
       <div className="admin-page">
-        <h1>Admin Sign In</h1>
-        <p>Enter the admin token to manage the league.</p>
-        {rejectedMessage && !signInError && (
+        <p role="status">Checking your session...</p>
+      </div>
+    );
+  }
+
+  if (!session) {
+    const expiredMessage = getAuthFailureMessage();
+    return (
+      <div className="admin-page">
+        <h1>Administrator Sign In</h1>
+        {expiredMessage && !signInError && (
           <p role="alert" className="admin-page__error">
-            {rejectedMessage}
+            {expiredMessage}
           </p>
         )}
-        <form className="admin-token-form" onSubmit={handleSubmit}>
-          <label className="admin-token-form__label" htmlFor="admin-token-input">
-            Admin token
-          </label>
-          <div className="admin-token-form__row">
+        <form className="admin-form admin-login-form" onSubmit={handleSubmit}>
+          <div className="admin-form__row">
+            <label htmlFor="admin-username">Username</label>
             <input
-              id="admin-token-input"
-              type="password"
-              className="admin-token-form__input"
-              value={tokenInput}
-              onChange={(event) => setTokenInput(event.target.value)}
-              autoComplete="off"
+              id="admin-username"
+              name="username"
+              value={username}
+              onChange={(event) => setUsername(event.target.value)}
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              required
             />
-            <button type="submit" className="admin-token-form__button" disabled={isVerifying}>
-              {isVerifying ? "Checking..." : "Sign in"}
-            </button>
+          </div>
+          <div className="admin-form__row">
+            <label htmlFor="admin-password">Password</label>
+            <input
+              id="admin-password"
+              name="password"
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              autoComplete="current-password"
+              required
+            />
           </div>
           {signInError && (
             <p role="alert" className="admin-form__error">
               {signInError}
             </p>
           )}
+          <button type="submit" className="admin-form__submit" disabled={isSubmitting}>
+            {isSubmitting ? "Signing in..." : "Sign in"}
+          </button>
         </form>
       </div>
     );
@@ -84,10 +104,14 @@ export default function AdminLayout() {
           <NavLink to="/admin/seasons">Seasons</NavLink>
           <NavLink to="/admin/matches">Matches</NavLink>
           <NavLink to="/admin/site">Site</NavLink>
+          <NavLink to="/admin/account">Account</NavLink>
         </nav>
-        <button type="button" className="admin-page__sign-out" onClick={clearToken}>
-          Sign out
-        </button>
+        <div className="admin-page__identity">
+          <span className="admin-page__user">{session.username}</span>
+          <button type="button" className="admin-page__sign-out" onClick={() => void signOut()}>
+            Sign out
+          </button>
+        </div>
       </div>
       <Outlet />
     </div>

@@ -1485,3 +1485,22 @@ table,
   color: var(--text);
   text-decoration: none;
 }
+
+/* Admin identity / login */
+
+.admin-page__identity {
+  display: flex;
+  align-items: center;
+  gap: var(--s3);
+}
+
+.admin-page__user {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.admin-login-form {
+  max-width: 380px;
+}

@@ -1,3 +1,12 @@
+// Mirrors backend/app/routers/admin.py::SessionInfo
+// Note: no password, hash, or session token ever crosses this boundary - the
+// session itself lives in an HttpOnly cookie the browser will not expose.
+export interface AdminSessionInfo {
+  username: string;
+  expires_at: string;
+  csrf_token: string;
+}
+
 // Mirrors backend/app/schemas/player.py::PlayerRead
 export interface Player {
   id: string;

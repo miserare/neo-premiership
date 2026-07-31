@@ -5,15 +5,25 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.config import settings
 from app.database import Base, get_db
 from app.main import app
+from app.models.admin import AdminUser
+from app.security.passwords import hash_password
+from app.security.sessions import CSRF_HEADER_NAME, SESSION_COOKIE_NAME, create_session
+from app.security.throttle import mutation_limiter
 
-# Write endpoints require this via the X-Admin-Token header; set here so
-# existing/new tests can authenticate without touching real config.
-ADMIN_TOKEN = "test-admin-token"
-ADMIN_HEADERS = {"X-Admin-Token": ADMIN_TOKEN}
-settings.admin_token = ADMIN_TOKEN
+# The test administrator. Password is only ever used to seed a hash; the tests
+# authenticate with a real session, not by bypassing auth.
+ADMIN_USERNAME = "testadmin"
+ADMIN_PASSWORD = "correct-horse-battery-staple"
+
+# Populated per test by the _admin_session fixture below. Mutated in place so
+# `from tests.conftest import ADMIN_HEADERS` keeps working across modules.
+#
+# Carrying the session cookie in a Cookie header (rather than on the client)
+# means every existing `headers=ADMIN_HEADERS` call site authenticates through
+# the real session lookup and the real CSRF check.
+ADMIN_HEADERS: dict[str, str] = {}
 
 # A single shared in-memory SQLite connection (via StaticPool) so every
 # session in a test sees the same tables - a plain in-memory DB is otherwise
@@ -45,10 +55,52 @@ async def setup_database() -> AsyncGenerator[None, None]:
         await conn.run_sync(Base.metadata.drop_all)
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _admin_session(setup_database: None) -> AsyncGenerator[None, None]:
+    """Create the test administrator and a live session for each test."""
+    # Throttle state is per-process; reset it so one test's failed logins do not
+    # lock out the next test.
+    mutation_limiter.reset()
+
+    async with TestingSessionLocal() as db:
+        user = AdminUser(
+            username=ADMIN_USERNAME,
+            password_hash=hash_password(ADMIN_PASSWORD),
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+        token, session = await create_session(db, user)
+        csrf = session.csrf_token
+
+    ADMIN_HEADERS.clear()
+    ADMIN_HEADERS.update(
+        {
+            "Cookie": f"{SESSION_COOKIE_NAME}={token}",
+            CSRF_HEADER_NAME: csrf,
+        }
+    )
+    yield
+    ADMIN_HEADERS.clear()
+
+
 @pytest_asyncio.fixture
 async def client() -> AsyncGenerator[AsyncClient, None]:
+    """Anonymous client. Requests are unauthenticated unless ADMIN_HEADERS is
+    passed explicitly."""
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as ac:
+        yield ac
+
+
+@pytest_asyncio.fixture
+async def admin_client() -> AsyncGenerator[AsyncClient, None]:
+    """Client pre-authenticated as the test administrator, for tests that read
+    more naturally without repeating the headers."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(
+        transport=transport, base_url="http://test", headers=dict(ADMIN_HEADERS)
+    ) as ac:
         yield ac
 
 

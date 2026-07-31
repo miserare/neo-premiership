@@ -1,4 +1,5 @@
 import type {
+  AdminSessionInfo,
   AnnouncementCreateInput,
   AnnouncementRead,
   AnnouncementUpdateInput,
@@ -24,8 +25,12 @@ import type {
   SiteLinksInput,
 } from "../types";
 
-const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "http://localhost:8000").replace(/\/$/, "");
-const ADMIN_TOKEN_STORAGE_KEY = "neo-premiership.admin-token";
+// Empty in production: the app calls /api on its own origin, which the reverse
+// proxy routes to the backend. No cross-origin request, so no CORS and no
+// third-party cookie concerns.
+const API_BASE_URL = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
+
+const CSRF_COOKIE_NAME = "pp_csrf";
 
 export class ApiError extends Error {
   status: number;
@@ -37,69 +42,69 @@ export class ApiError extends Error {
   }
 }
 
-/** The admin write endpoints are gated by a single shared secret (X-Admin-Token),
- * not per-user login - persist it locally so the admin UI doesn't ask every visit. */
-const tokenListeners = new Set<() => void>();
+/** Authentication is an HttpOnly session cookie the browser holds and JavaScript
+ * cannot read. Nothing reusable is kept in localStorage or sessionStorage - an
+ * XSS bug therefore cannot exfiltrate a durable credential.
+ *
+ * The only value we read is the CSRF token, which is intentionally readable and
+ * useless without the session cookie that accompanies it. */
+function readCsrfToken(): string {
+  const match = document.cookie.match(new RegExp(`(?:^|; )${CSRF_COOKIE_NAME}=([^;]*)`));
+  return match ? decodeURIComponent(match[1]) : "";
+}
 
-/** Why the stored token was dropped, so the sign-in prompt can explain itself
- * instead of the admin silently bouncing back to it mid-edit. */
+const authListeners = new Set<() => void>();
+
 let authFailureMessage: string | null = null;
 
 export function getAuthFailureMessage(): string | null {
   return authFailureMessage;
 }
 
-export function getAdminToken(): string {
-  return window.localStorage.getItem(ADMIN_TOKEN_STORAGE_KEY) ?? "";
+export function clearAuthFailureMessage(): void {
+  authFailureMessage = null;
 }
 
-export function setAdminToken(token: string): void {
-  if (token) {
-    window.localStorage.setItem(ADMIN_TOKEN_STORAGE_KEY, token);
-    authFailureMessage = null;
-  } else {
-    window.localStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
-  }
-  for (const listener of tokenListeners) {
+/** Lets the admin UI re-render when the server rejects our session. */
+export function subscribeAuth(listener: () => void): () => void {
+  authListeners.add(listener);
+  return () => {
+    authListeners.delete(listener);
+  };
+}
+
+function notifyAuthChanged(): void {
+  for (const listener of authListeners) {
     listener();
   }
 }
 
-/** Lets the admin UI re-render when the token is cleared from anywhere -
- * including request() dropping it after a 401. */
-export function subscribeAdminToken(listener: () => void): () => void {
-  tokenListeners.add(listener);
-  return () => {
-    tokenListeners.delete(listener);
-  };
-}
+const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-interface RequestOptions extends RequestInit {
-  /** Send this token instead of the stored one. Used to check a candidate token
-   * at sign-in, so a failed check never discards an already-working token. */
-  adminToken?: string;
-}
+async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const method = (init?.method ?? "GET").toUpperCase();
+  const csrf = UNSAFE_METHODS.has(method) ? readCsrfToken() : "";
 
-async function request<T>(path: string, init?: RequestOptions): Promise<T> {
-  const { adminToken: explicitToken, ...requestInit } = init ?? {};
-  const token = explicitToken ?? getAdminToken();
   const response = await fetch(`${API_BASE_URL}/api${path}`, {
-    ...requestInit,
+    ...init,
+    // Send the session cookie. Required even same-origin once the request is
+    // issued by fetch with explicit options.
+    credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
-      ...(token ? { "X-Admin-Token": token } : {}),
-      ...requestInit.headers,
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+      ...init?.headers,
     },
   });
 
   if (!response.ok) {
     const body = await response.json().catch(() => null);
     const message = typeof body?.detail === "string" ? body.detail : response.statusText;
-    // A stored token the server rejects is worse than no token: the UI would
-    // look signed in while every save fails. Drop it so the prompt comes back.
-    if (response.status === 401 && explicitToken === undefined) {
-      authFailureMessage = "Your admin token was rejected. Please sign in again.";
-      setAdminToken("");
+    // A rejected session is worse than none: the UI would look signed in while
+    // every save failed. Surface it so the admin area re-prompts.
+    if (response.status === 401) {
+      authFailureMessage = "Your session has expired. Please sign in again.";
+      notifyAuthChanged();
     }
     throw new ApiError(response.status, message);
   }
@@ -212,9 +217,19 @@ export const api = {
       request<SiteLinks>("/site-links", { method: "PUT", body: JSON.stringify(input) }),
   },
   admin: {
-    /** Resolves if `token` is accepted; throws ApiError (401 wrong token,
-     * 503 server has no ADMIN_TOKEN configured) otherwise. */
-    verify: (token: string): Promise<{ ok: boolean }> =>
-      request<{ ok: boolean }>("/admin/session", { adminToken: token }),
+    login: (username: string, password: string): Promise<AdminSessionInfo> =>
+      request<AdminSessionInfo>("/admin/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password }),
+      }),
+    session: (): Promise<AdminSessionInfo> => request<AdminSessionInfo>("/admin/session"),
+    logout: (): Promise<void> => request<void>("/admin/logout", { method: "POST" }),
+    logoutEverywhere: (): Promise<void> =>
+      request<void>("/admin/logout-everywhere", { method: "POST" }),
+    changePassword: (currentPassword: string, newPassword: string): Promise<void> =>
+      request<void>("/admin/password", {
+        method: "POST",
+        body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+      }),
   },
 };

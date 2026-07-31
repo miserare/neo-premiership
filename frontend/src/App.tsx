@@ -2,6 +2,7 @@ import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import ErrorBoundary from "./components/ErrorBoundary";
 import NavSearch from "./components/NavSearch";
+import AdminAccountPage from "./pages/AdminAccountPage";
 import AdminLayout from "./pages/AdminLayout";
 import AdminMatchesPage from "./pages/AdminMatchesPage";
 import AdminPlayersPage from "./pages/AdminPlayersPage";
@@ -52,6 +53,7 @@ export default function App() {
               <Route path="seasons/:seasonId" element={<AdminSeasonRosterPage />} />
               <Route path="matches" element={<AdminMatchesPage />} />
               <Route path="site" element={<AdminSitePage />} />
+              <Route path="account" element={<AdminAccountPage />} />
             </Route>
             <Route path="*" element={<NotFoundPage />} />
           </Routes>
