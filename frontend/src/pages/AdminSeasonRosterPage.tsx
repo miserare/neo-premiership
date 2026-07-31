@@ -5,7 +5,7 @@ import PokemonPicker from "../components/PokemonPicker";
 import PokemonTeam from "../components/PokemonTeam";
 import { useAsync } from "../hooks/useAsync";
 import { api, ApiError } from "../lib/api";
-import type { Player, PokemonInput, SeasonEntryRead } from "../types";
+import type { Player, PokemonInput, RosterChangeType, SeasonEntryRead } from "../types";
 
 interface DraftPoolEditorProps {
   seasonId: string;
@@ -17,6 +17,10 @@ function DraftPoolEditor({ seasonId, entry, onSaved }: DraftPoolEditorProps) {
   const [pool, setPool] = useState<PokemonInput[]>(
     entry.pokemon.map((p) => ({ pokeapi_id: p.pokeapi_id, species_name: p.species_name })),
   );
+  const [changeType, setChangeType] = useState<RosterChangeType>(
+    entry.former_pokemon.length > 0 ? "free_agency" : "draft",
+  );
+  const [effectiveAt, setEffectiveAt] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -24,7 +28,11 @@ function DraftPoolEditor({ seasonId, entry, onSaved }: DraftPoolEditorProps) {
     setError(null);
     setIsSaving(true);
     try {
-      await api.seasons.roster.setPokemon(seasonId, entry.id, pool);
+      await api.seasons.roster.setPokemon(seasonId, entry.id, {
+        pokemon: pool,
+        change_type: changeType,
+        ...(effectiveAt ? { effective_at: new Date(effectiveAt).toISOString() } : {}),
+      });
       onSaved();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Failed to save drafted Pokémon.");
@@ -35,20 +43,69 @@ function DraftPoolEditor({ seasonId, entry, onSaved }: DraftPoolEditorProps) {
 
   return (
     <div className="admin-form">
+      <h3>Current ownership</h3>
+      <p className="admin-form__hint">
+        This list is the player&apos;s roster now. Removing a Pokémon archives its ownership;
+        previously recorded match teams are never changed.
+      </p>
       <PokemonPicker
-        label={`${entry.player.username}'s drafted Pokémon`}
+        label={`${entry.player.username}'s current Pokémon`}
         value={pool}
         onChange={setPool}
         max={12}
       />
+      <div className="admin-form__row">
+        <label htmlFor={`change-type-${entry.id}`}>Reason for this change</label>
+        <select
+          id={`change-type-${entry.id}`}
+          value={changeType}
+          onChange={(event) => setChangeType(event.target.value as RosterChangeType)}
+        >
+          <option value="draft">Draft</option>
+          <option value="free_agency">Free agency / waiver</option>
+          <option value="trade">Trade</option>
+          <option value="correction">Record correction</option>
+        </select>
+      </div>
+      <div className="admin-form__row">
+        <label htmlFor={`effective-at-${entry.id}`}>Effective at</label>
+        <input
+          id={`effective-at-${entry.id}`}
+          type="datetime-local"
+          value={effectiveAt}
+          onChange={(event) => setEffectiveAt(event.target.value)}
+        />
+        <p className="admin-form__hint">
+          Leave blank to use the current time. For a trade, use the same timestamp when updating
+          both players.
+        </p>
+      </div>
       {error && (
         <p role="alert" className="admin-form__error">
           {error}
         </p>
       )}
       <button type="button" className="admin-form__submit" onClick={save} disabled={isSaving}>
-        {isSaving ? "Saving..." : "Save draft"}
+        {isSaving ? "Saving..." : "Save current roster"}
       </button>
+      {entry.former_pokemon.length > 0 && (
+        <div className="admin-roster-history">
+          <h3>Formerly rostered</h3>
+          <ul>
+            {entry.former_pokemon.map((pokemon) => (
+              <li key={pokemon.id}>
+                <strong>{pokemon.species_name}</strong>
+                {" — "}
+                {pokemon.acquisition_type.replace("_", " ")}
+                {pokemon.acquired_at && ` ${new Date(pokemon.acquired_at).toLocaleDateString()}`}
+                {" → "}
+                {pokemon.release_type?.replace("_", " ")}
+                {pokemon.released_at && ` ${new Date(pokemon.released_at).toLocaleDateString()}`}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </div>
   );
 }
@@ -232,7 +289,7 @@ export default function AdminSeasonRosterPage() {
                     <th>Player</th>
                     <th>Group</th>
                     <th>Tiebreaker</th>
-                    <th>Drafted</th>
+                    <th>Current Pokémon</th>
                     <th></th>
                   </tr>
                 </thead>
@@ -287,7 +344,7 @@ export default function AdminSeasonRosterPage() {
                               type="button"
                               onClick={() => setDraftingId(draftingId === entry.id ? null : entry.id)}
                             >
-                              {draftingId === entry.id ? "Close" : "Draft"}
+                              {draftingId === entry.id ? "Close" : "Manage roster"}
                             </button>
                             <button type="button" onClick={() => handleRemove(entry)}>
                               Remove

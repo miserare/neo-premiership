@@ -12,7 +12,7 @@ async def get_roster(db: AsyncSession, season_id: uuid.UUID) -> list[SeasonEntry
     stmt = (
         select(SeasonEntry)
         .where(SeasonEntry.season_id == season_id)
-        .options(joinedload(SeasonEntry.player), selectinload(SeasonEntry.pokemon))
+        .options(joinedload(SeasonEntry.player), selectinload(SeasonEntry.pokemon_history))
         .order_by(SeasonEntry.group_label, SeasonEntry.id)
     )
     result = await db.execute(stmt)
@@ -24,7 +24,7 @@ async def get_player_season_entries(db: AsyncSession, player_id: uuid.UUID) -> l
     stmt = (
         select(SeasonEntry)
         .where(SeasonEntry.player_id == player_id)
-        .options(joinedload(SeasonEntry.season), selectinload(SeasonEntry.pokemon))
+        .options(joinedload(SeasonEntry.season), selectinload(SeasonEntry.pokemon_history))
     )
     result = await db.execute(stmt)
     entries = list(result.unique().scalars().all())
@@ -35,7 +35,7 @@ async def get_entry_by_id(db: AsyncSession, entry_id: uuid.UUID, refresh: bool =
     stmt = (
         select(SeasonEntry)
         .where(SeasonEntry.id == entry_id)
-        .options(joinedload(SeasonEntry.player), selectinload(SeasonEntry.pokemon))
+        .options(joinedload(SeasonEntry.player), selectinload(SeasonEntry.pokemon_history))
     )
     if refresh:
         # Without this the already-loaded `pokemon` collection survives a

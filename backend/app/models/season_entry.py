@@ -33,13 +33,30 @@ class SeasonEntry(Base):
 
     player: Mapped["Player"] = relationship("Player", lazy="raise")
     season: Mapped["Season"] = relationship("Season", lazy="raise")
-    pokemon: Mapped[list["SeasonRosterPokemon"]] = relationship(
+    pokemon_history: Mapped[list["SeasonRosterPokemon"]] = relationship(
         "SeasonRosterPokemon",
         back_populates="season_entry",
         cascade="all, delete-orphan",
-        order_by="SeasonRosterPokemon.slot",
+        order_by="SeasonRosterPokemon.slot, SeasonRosterPokemon.acquired_at",
         lazy="raise",
     )
+
+    @property
+    def pokemon(self) -> list["SeasonRosterPokemon"]:
+        """The currently owned pool, kept under the original API field name."""
+        return sorted(
+            (pokemon for pokemon in self.pokemon_history if pokemon.released_at is None),
+            key=lambda pokemon: pokemon.slot,
+        )
+
+    @property
+    def former_pokemon(self) -> list["SeasonRosterPokemon"]:
+        """Released tenures, newest release first, for roster history."""
+        return sorted(
+            (pokemon for pokemon in self.pokemon_history if pokemon.released_at is not None),
+            key=lambda pokemon: (pokemon.released_at, pokemon.slot),
+            reverse=True,
+        )
 
     def __repr__(self) -> str:
         return f"<SeasonEntry season_id={self.season_id} player_id={self.player_id}>"

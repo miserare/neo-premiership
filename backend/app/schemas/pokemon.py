@@ -1,6 +1,15 @@
+import enum
 import uuid
+from datetime import datetime, timezone
 
 from pydantic import BaseModel, ConfigDict, Field
+
+
+class RosterChangeType(str, enum.Enum):
+    DRAFT = "draft"
+    FREE_AGENCY = "free_agency"
+    TRADE = "trade"
+    CORRECTION = "correction"
 
 
 class PokemonInput(BaseModel):
@@ -18,6 +27,10 @@ class SeasonRosterPokemonRead(BaseModel):
     pokeapi_id: int
     species_name: str
     slot: int
+    acquired_at: datetime | None
+    released_at: datetime | None
+    acquisition_type: RosterChangeType
+    release_type: RosterChangeType | None
 
 
 class MatchPokemonRead(BaseModel):
@@ -38,3 +51,16 @@ class PokemonSet(BaseModel):
     """
 
     pokemon: list[PokemonInput] = Field(default_factory=list, max_length=24)
+
+
+class RosterPokemonSet(PokemonSet):
+    """Desired current roster and metadata for additions/removals in this save."""
+
+    effective_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    change_type: RosterChangeType = RosterChangeType.DRAFT
+
+
+class MatchPokemonSet(BaseModel):
+    """A team actually brought to one match."""
+
+    pokemon: list[PokemonInput] = Field(default_factory=list, max_length=6)

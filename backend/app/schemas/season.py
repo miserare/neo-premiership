@@ -55,12 +55,14 @@ class SeasonEntryRead(BaseModel):
     group_label: str | None
     tiebreaker_value: float | None
     pokemon: list[SeasonRosterPokemonRead]
+    former_pokemon: list[SeasonRosterPokemonRead]
 
 
 class RosterEntry(BaseModel):
     player: PlayerSummary
     group_label: str | None
     pokemon: list[SeasonRosterPokemonRead]
+    former_pokemon: list[SeasonRosterPokemonRead]
 
 
 class StandingsEntry(BaseModel):

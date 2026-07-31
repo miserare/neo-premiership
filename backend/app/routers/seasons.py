@@ -10,7 +10,7 @@ from app.crud import pokemon as pokemon_crud
 from app.crud import season_entries as entry_crud
 from app.crud import seasons as crud
 from app.database import get_db
-from app.schemas.pokemon import PokemonSet
+from app.schemas.pokemon import RosterPokemonSet
 from app.schemas.season import (
     SeasonCreate,
     SeasonDetail,
@@ -152,9 +152,12 @@ async def remove_roster_entry(
     dependencies=[Depends(require_admin)],
 )
 async def set_draft_pool(
-    season_id: uuid.UUID, entry_id: uuid.UUID, pokemon_in: PokemonSet, db: AsyncSession = Depends(get_db)
+    season_id: uuid.UUID,
+    entry_id: uuid.UUID,
+    pokemon_in: RosterPokemonSet,
+    db: AsyncSession = Depends(get_db),
 ) -> SeasonEntryRead:
-    """Replace the Pokémon a player drafted for this season."""
+    """Update current ownership while retaining released Pokémon as history."""
     entry = await entry_crud.get_entry_by_id(db, entry_id)
     if entry is None or entry.season_id != season_id:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Roster entry not found")
@@ -166,7 +169,13 @@ async def set_draft_pool(
             detail="the same Pokémon cannot be drafted twice by one player",
         )
 
-    await pokemon_crud.replace_draft_pool(db, entry_id, pokemon_in)
+    try:
+        await pokemon_crud.replace_draft_pool(db, entry_id, pokemon_in)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)
+        ) from exc
     refreshed = await entry_crud.get_entry_by_id(db, entry_id, refresh=True)
     assert refreshed is not None
     return refreshed

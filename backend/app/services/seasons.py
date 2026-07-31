@@ -61,6 +61,9 @@ async def build_season_detail(db: AsyncSession, season: Season, today: date | No
                 player=PlayerSummary.model_validate(entry.player),
                 group_label=entry.group_label,
                 pokemon=[SeasonRosterPokemonRead.model_validate(p) for p in entry.pokemon],
+                former_pokemon=[
+                    SeasonRosterPokemonRead.model_validate(p) for p in entry.former_pokemon
+                ],
             )
             for entry in roster_entries
         ],

@@ -67,7 +67,17 @@ export default function SeasonDetailPage() {
                     <span className="season-page__group-label">({entry.group_label})</span>
                   )}
                 </div>
-                <PokemonTeam pokemon={entry.pokemon} size={40} />
+                <PokemonTeam
+                  pokemon={entry.pokemon}
+                  size={40}
+                  emptyLabel="No Pokémon currently rostered."
+                />
+                {entry.former_pokemon.length > 0 && (
+                  <details className="roster-history">
+                    <summary>Previously rostered ({entry.former_pokemon.length})</summary>
+                    <PokemonTeam pokemon={entry.former_pokemon} size={32} />
+                  </details>
+                )}
               </li>
             ))}
           </ul>

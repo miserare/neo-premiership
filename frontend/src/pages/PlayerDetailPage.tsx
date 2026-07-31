@@ -142,8 +142,14 @@ export default function PlayerDetailPage() {
                 </div>
                 <PokemonTeam
                   pokemon={record.pokemon}
-                  emptyLabel="No drafted Pokémon recorded for this season."
+                  emptyLabel="No currently rostered Pokémon recorded for this season."
                 />
+                {record.former_pokemon.length > 0 && (
+                  <details className="roster-history">
+                    <summary>Previously rostered ({record.former_pokemon.length})</summary>
+                    <PokemonTeam pokemon={record.former_pokemon} size={36} />
+                  </details>
+                )}
               </li>
             ))}
           </ul>

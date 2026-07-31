@@ -76,7 +76,7 @@ constraints and never writes data backfills.
 ## Tests
 
 ```bash
-cd backend && python -m pytest        # 52 tests
+cd backend && python -m pytest        # 57 tests
 cd backend && ruff check app/ tests/
 cd frontend && npx tsc -b && npm run build
 ```
@@ -170,6 +170,14 @@ docker-compose.prod.yml   Production
 - **Home page links are automatic but overridable.** The stream, document and
   table links derive from league data by default; an admin can pin any of them
   under Admin → Site, and clearing a pinned URL restores the derived one.
+- **Roster ownership is historical.** Saving a roster change closes ownership
+  tenures for removed Pokémon and starts new tenures for additions; it never
+  deletes the team recorded on an earlier match. Set the effective timestamp and
+  choose Draft, Free agency, Trade, or Correction in Admin → Seasons → Roster.
+  For a trade, use the same timestamp when removing the Pokémon from one player
+  and adding it to the other. Match-team choices are evaluated at the match's
+  completed time (or scheduled time when not completed); undated legacy matches
+  can use any Pokémon that player rostered during the season.
 
 ## Credits and licence
 

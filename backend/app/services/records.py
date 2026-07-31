@@ -32,6 +32,9 @@ def build_player_detail(player: Player, matches: list[Match], season_entries: li
             season_id=entry.season_id,
             season_name=entry.season.name,
             pokemon=[SeasonRosterPokemonRead.model_validate(p) for p in entry.pokemon],
+            former_pokemon=[
+                SeasonRosterPokemonRead.model_validate(p) for p in entry.former_pokemon
+            ],
             **_record_from_matches(player.id, matches_by_season.get(entry.season_id, [])).model_dump(),
         )
         for entry in season_entries

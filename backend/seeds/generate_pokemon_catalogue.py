@@ -13,7 +13,9 @@ hyphen, for two reasons: PokeAPI's default name for some species is itself
 qualified (386 is `deoxys-normal`, not `deoxys`), and plenty of species names
 contain hyphens (`mr-mime`, `ho-oh`, `porygon-z`, `great-tusk`).
 """
-import json, pathlib, sys
+import json
+import pathlib
+import sys
 
 SP = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "/tmp")
 DEST = pathlib.Path(__file__).resolve().parents[2] / "frontend/src/data/pokemon.json"

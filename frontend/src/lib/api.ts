@@ -12,6 +12,7 @@ import type {
   PlayerDetail,
   PlayerUpdateInput,
   PokemonInput,
+  RosterPokemonSetInput,
   SeasonCreateInput,
   SeasonDetail,
   SeasonEntryCreateInput,
@@ -162,10 +163,14 @@ export const api = {
         }),
       remove: (seasonId: string, entryId: string): Promise<void> =>
         request<void>(`/seasons/${seasonId}/roster/${entryId}`, { method: "DELETE" }),
-      setPokemon: (seasonId: string, entryId: string, pokemon: PokemonInput[]): Promise<SeasonEntryRead> =>
+      setPokemon: (
+        seasonId: string,
+        entryId: string,
+        input: RosterPokemonSetInput,
+      ): Promise<SeasonEntryRead> =>
         request<SeasonEntryRead>(`/seasons/${seasonId}/roster/${entryId}/pokemon`, {
           method: "PUT",
-          body: JSON.stringify({ pokemon }),
+          body: JSON.stringify(input),
         }),
     },
   },

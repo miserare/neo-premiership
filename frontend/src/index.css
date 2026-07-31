@@ -942,6 +942,34 @@ table,
   margin: 0;
 }
 
+.roster-history {
+  margin-top: var(--s2);
+  color: var(--text-muted);
+  font-size: 0.84rem;
+}
+
+.roster-history summary {
+  width: fit-content;
+  cursor: pointer;
+  color: var(--gold);
+}
+
+.roster-history .pokemon-team {
+  margin-top: var(--s2);
+}
+
+.admin-roster-history {
+  margin-top: var(--s4);
+  padding-top: var(--s3);
+  border-top: 1px solid var(--border);
+}
+
+.admin-roster-history ul {
+  margin: var(--s2) 0 0;
+  padding-left: var(--s4);
+  color: var(--text-muted);
+}
+
 /* ============================= Pokémon picker ============================ */
 
 .pokemon-picker {

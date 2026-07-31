@@ -59,6 +59,7 @@ class PlayerSeasonRecord(BaseModel):
     # The Pokémon this player drafted that season, for the sprite roster on
     # their profile.
     pokemon: list[SeasonRosterPokemonRead] = []
+    former_pokemon: list[SeasonRosterPokemonRead] = []
 
 
 class PlayerDetail(BaseModel):

@@ -45,6 +45,7 @@ export interface PlayerSeasonRecord {
   wins: number;
   losses: number;
   pokemon: SeasonRosterPokemon[];
+  former_pokemon: SeasonRosterPokemon[];
 }
 
 // Mirrors backend/app/models/match.py::MatchStatus
@@ -65,7 +66,13 @@ export interface SeasonRosterPokemon {
   pokeapi_id: number;
   species_name: string;
   slot: number;
+  acquired_at: string | null;
+  released_at: string | null;
+  acquisition_type: RosterChangeType;
+  release_type: RosterChangeType | null;
 }
+
+export type RosterChangeType = "draft" | "free_agency" | "trade" | "correction";
 
 // Mirrors backend/app/schemas/pokemon.py::MatchPokemonRead
 export interface MatchPokemon {
@@ -193,6 +200,7 @@ export interface RosterEntry {
   player: PlayerSummary;
   group_label: string | null;
   pokemon: SeasonRosterPokemon[];
+  former_pokemon: SeasonRosterPokemon[];
 }
 
 // Mirrors backend/app/schemas/season.py::SeasonCreate
@@ -222,6 +230,13 @@ export interface SeasonEntryRead {
   group_label: string | null;
   tiebreaker_value: number | null;
   pokemon: SeasonRosterPokemon[];
+  former_pokemon: SeasonRosterPokemon[];
+}
+
+export interface RosterPokemonSetInput {
+  pokemon: PokemonInput[];
+  effective_at?: string;
+  change_type?: RosterChangeType;
 }
 
 // Mirrors backend/app/schemas/season.py::SeasonEntryCreate

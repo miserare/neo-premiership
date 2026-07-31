@@ -59,9 +59,10 @@ async def test_player_records_and_backlog(client: AsyncClient, db_session: Async
         "season_name": "New Record Season",
         "wins": 0,
         "losses": 1,
-        # No draft was recorded for this season, so the sprite roster is empty.
-        "pokemon": [],
-    }
+            # No draft was recorded for this season, so the sprite roster is empty.
+            "pokemon": [],
+            "former_pokemon": [],
+        }
     assert [record["season_name"] for record in data["season_records"]] == [
         "New Record Season",
         "Old Record Season",

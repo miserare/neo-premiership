@@ -23,9 +23,12 @@ from app.schemas.player import (
     PlayerUpdate,
 )
 from app.schemas.pokemon import (
+    MatchPokemonSet,
     MatchPokemonRead,
     PokemonInput,
     PokemonSet,
+    RosterChangeType,
+    RosterPokemonSet,
     SeasonRosterPokemonRead,
 )
 from app.schemas.season import (
@@ -62,11 +65,14 @@ __all__ = [
     "MatchGameRead",
     "MatchGamesSet",
     "MatchPokemonRead",
+    "MatchPokemonSet",
     "MatchRead",
     "MatchSeries",
     "MatchUpdate",
     "PokemonInput",
     "PokemonSet",
+    "RosterChangeType",
+    "RosterPokemonSet",
     "SeasonRosterPokemonRead",
     "SiteLinksRead",
     "SiteLinksUpdate",
