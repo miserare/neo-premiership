@@ -108,6 +108,22 @@ python backend/seeds/generate_pokemon_catalogue.py /tmp
 
 The script fails loudly if a name would exceed the `species_name` column limit.
 
+## Production
+
+Live at **https://pk-prem.com**, on a single Ubuntu 24.04 VPS running four
+containers behind Caddy. Operational procedures - migrations, backups, restore,
+credential rotation, rollback, incident triage - are in
+[docs/OPERATIONS.md](docs/OPERATIONS.md).
+
+Authentication is an administrator account with an Argon2id password hash and an
+opaque server-side session in an HttpOnly cookie. There is deliberately no
+default password; bootstrap the first account with:
+
+```bash
+docker compose -f docker-compose.prod.yml exec backend \
+    python -m app.cli create-admin --username admin
+```
+
 ## Deployment
 
 `docker-compose.prod.yml` runs a production stack: a static frontend build

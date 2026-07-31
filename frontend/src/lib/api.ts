@@ -82,19 +82,27 @@ function notifyAuthChanged(): void {
 
 const UNSAFE_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
-async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const method = (init?.method ?? "GET").toUpperCase();
+interface RequestOptions extends RequestInit {
+  /** Don't treat a 401 as "your session died". Used by the probe that asks
+   * whether we are signed in at all: a first-time visitor has no session, and
+   * telling them it expired is simply wrong. */
+  quiet401?: boolean;
+}
+
+async function request<T>(path: string, init?: RequestOptions): Promise<T> {
+  const { quiet401 = false, ...requestInit } = init ?? {};
+  const method = (requestInit.method ?? "GET").toUpperCase();
   const csrf = UNSAFE_METHODS.has(method) ? readCsrfToken() : "";
 
   const response = await fetch(`${API_BASE_URL}/api${path}`, {
-    ...init,
+    ...requestInit,
     // Send the session cookie. Required even same-origin once the request is
     // issued by fetch with explicit options.
     credentials: "same-origin",
     headers: {
       "Content-Type": "application/json",
       ...(csrf ? { "X-CSRF-Token": csrf } : {}),
-      ...init?.headers,
+      ...requestInit.headers,
     },
   });
 
@@ -103,7 +111,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const message = typeof body?.detail === "string" ? body.detail : response.statusText;
     // A rejected session is worse than none: the UI would look signed in while
     // every save failed. Surface it so the admin area re-prompts.
-    if (response.status === 401) {
+    if (response.status === 401 && !quiet401) {
       authFailureMessage = "Your session has expired. Please sign in again.";
       notifyAuthChanged();
     }
@@ -226,7 +234,8 @@ export const api = {
         method: "POST",
         body: JSON.stringify({ username, password }),
       }),
-    session: (): Promise<AdminSessionInfo> => request<AdminSessionInfo>("/admin/session"),
+    session: (): Promise<AdminSessionInfo> =>
+      request<AdminSessionInfo>("/admin/session", { quiet401: true }),
     logout: (): Promise<void> => request<void>("/admin/logout", { method: "POST" }),
     logoutEverywhere: (): Promise<void> =>
       request<void>("/admin/logout-everywhere", { method: "POST" }),
