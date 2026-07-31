@@ -36,8 +36,13 @@ for secret in secrets/session_secret secrets/postgres_password; do
     [[ -s "$secret" ]] || fail "$secret missing or empty - run ./scripts/generate-secrets.sh"
     perms=$(stat -c %a "$secret" 2>/dev/null || stat -f %Lp "$secret")
     [[ "$perms" == "600" ]] || fail "$secret has permissions $perms, expected 600"
-    # 32 bytes minimum; the file also carries a trailing newline.
-    (( $(wc -c < "$secret") >= 32 )) || fail "$secret is shorter than 32 bytes"
+    # stat, not `wc -c`: the deploy user deliberately cannot READ these files -
+    # they are owned by the container app uid - and validation must not require
+    # a privilege the deployer should not have.
+    size=$(stat -c %s "$secret" 2>/dev/null || stat -f %z "$secret")
+    (( size >= 32 )) || fail "$secret is only ${size} bytes, expected at least 32"
+    owner=$(stat -c %u "$secret" 2>/dev/null || stat -f %u "$secret")
+    echo "  $(basename "$secret"): ${size} bytes, mode $perms, uid $owner"
 done
 echo "  configuration and secrets OK (values not shown)"
 
