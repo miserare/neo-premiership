@@ -48,12 +48,19 @@ mkdir -p "$SECRETS_DIR"
 chmod 700 "$SECRETS_DIR"
 
 # 32 bytes of kernel randomness, base64 for safe transport through env files.
-# Alphanumeric only. base64 emits '/' and '+', which must then be URL-encoded
-# into a database URL as %2F/%2B - and a '%' in a connection string breaks
-# configparser-based tooling in ways whose error messages quote the URL.
-# 64 alphanumeric characters is ~380 bits, far above the 32-byte requirement.
+# Hex, so the output is alphanumeric by construction: base64 emits '/' and '+',
+# which must then be URL-encoded as %2F/%2B, and a '%' in a connection string
+# breaks configparser-based tooling whose error messages quote the whole URL.
+# 64 hex characters is 256 bits, well above the 32-byte requirement.
+#
+# No `tr | head` pipeline here: head exiting early sends SIGPIPE to tr, and
+# under `set -o pipefail` that fails the pipeline and aborts the script.
 random_secret() {
-    LC_ALL=C tr -dc 'A-Za-z0-9' < /dev/urandom | head -c 64
+    if command -v openssl >/dev/null 2>&1; then
+        openssl rand -hex 32
+    else
+        od -An -tx1 -N32 /dev/urandom | tr -d ' \n'
+    fi
 }
 
 write_secret() {
