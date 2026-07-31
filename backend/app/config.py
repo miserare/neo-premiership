@@ -1,9 +1,11 @@
 import os
 from functools import lru_cache
+from typing import Annotated
 from pathlib import Path
+from urllib.parse import quote_plus
 
 from pydantic import Field, field_validator, model_validator
-from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
 # Values that look configured but are not. Production refuses to start on any of
 # them, so a half-finished .env fails loudly instead of running with a guessable
@@ -63,7 +65,17 @@ class Settings(BaseSettings):
     # Public hostname. Used for trusted-host validation and cookie policy.
     domain: str = "pk-prem.com"
 
+    # Either set DATABASE_URL directly, or supply the POSTGRES_* parts and let
+    # them be composed below. The second form exists because the password
+    # arrives as a mounted secret file, and Compose does not shell-evaluate
+    # environment values - so the URL cannot be assembled in the compose file.
     database_url: str = "postgresql+asyncpg://neo_premiership:neo_premiership@localhost:5432/neo_premiership"
+
+    postgres_user: str | None = None
+    postgres_password: str | None = None
+    postgres_db: str | None = None
+    postgres_host: str = "db"
+    postgres_port: int = 5432
 
     # Connection pool sizing for a 2 GB single-VPS deployment: small, with
     # pre-ping so a connection dropped by a database restart is discarded rather
@@ -76,7 +88,10 @@ class Settings(BaseSettings):
 
     # Empty in same-origin production: the browser calls /api on its own origin
     # via Caddy, so no cross-origin request exists to permit.
-    cors_origins: list[str] = []
+    #
+    # NoDecode stops pydantic-settings JSON-parsing the raw env value before our
+    # validator sees it - CORS_ORIGINS="" is legitimate and is not valid JSON.
+    cors_origins: Annotated[list[str], NoDecode] = []
 
     # --- Session authentication -------------------------------------------
     session_secret: str | None = None
@@ -156,6 +171,25 @@ class Settings(BaseSettings):
                 return json.loads(stripped)
             return [origin.strip() for origin in stripped.split(",") if origin.strip()]
         return value
+
+    @model_validator(mode="after")
+    def _compose_database_url(self) -> "Settings":
+        """Build DATABASE_URL from POSTGRES_* when the password came from a file.
+
+        Runs before the production checks below so the composed URL is what
+        gets validated.
+        """
+        explicit = os.environ.get("DATABASE_URL")
+        if explicit:
+            return self
+        if self.postgres_user and self.postgres_password and self.postgres_db:
+            password = quote_plus(self.postgres_password)
+            user = quote_plus(self.postgres_user)
+            self.database_url = (
+                f"postgresql+asyncpg://{user}:{password}"
+                f"@{self.postgres_host}:{self.postgres_port}/{self.postgres_db}"
+            )
+        return self
 
     @model_validator(mode="after")
     def _validate_production(self) -> "Settings":

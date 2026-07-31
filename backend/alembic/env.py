@@ -13,12 +13,22 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 # autogenerate will think the table was deleted and try to drop it!
 from app.config import settings
 from app.database import Base
+# Importing the package runs app/models/__init__.py, which imports every model
+# and therefore fully populates Base.metadata. Listing them explicitly keeps
+# autogenerate honest: a model missing from metadata looks like a dropped table.
 from app.models import (  # noqa: F401 - imported for their side effect on Base.metadata
+    AdminSession,
+    AdminUser,
     Announcement,
+    LoginAttempt,
     Match,
+    MatchGame,
+    MatchPokemon,
     Player,
     Season,
     SeasonEntry,
+    SeasonRosterPokemon,
+    SiteLinks,
 )
 
 # This is the Alembic Config object

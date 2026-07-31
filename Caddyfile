@@ -1,35 +1,102 @@
-# Caddy terminates TLS and puts the site and API on ONE origin.
+# Caddy terminates TLS and serves the site and API on ONE origin.
 #
 # Certificates are obtained and renewed from Let's Encrypt automatically - no
-# certbot, no cron, no renewal script. Requirements: DOMAIN's DNS A/AAAA record
-# points at this server, and ports 80 and 443 are reachable from the internet
-# (80 is needed for the ACME challenge and the HTTP->HTTPS redirect).
+# certbot, no cron, no renewal script. Requirements: DNS for {$DOMAIN} points at
+# this host, and ports 80 and 443 are reachable (80 is needed for the ACME
+# challenge as well as the HTTP->HTTPS redirect).
 #
 # Because /api is served from the same origin as the site, the browser makes
-# same-origin requests: VITE_API_URL stays empty and CORS never comes into it.
+# same-origin requests: VITE_API_URL stays empty and CORS never applies.
+
+{
+	# Contact address for expiry notices is deliberately omitted rather than
+	# guessed; Let's Encrypt does not require it.
+	admin off
+}
+
+# ---------------------------------------------------------------- canonical
 
 {$DOMAIN} {
-	encode gzip
+	encode gzip zstd
 
-	# API first - more specific than the catch-all below.
-	handle /api/* {
-		reverse_proxy backend:8000
-	}
-
-	handle /health {
-		reverse_proxy backend:8000
-	}
-
-	handle {
-		reverse_proxy frontend:80
-	}
-
+	# --- security headers -------------------------------------------------
 	header {
-		# Tell browsers to stick to HTTPS for this host.
-		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		# Host-only HSTS to begin with: no includeSubDomains until every
+		# intended subdomain is confirmed to serve HTTPS, and no preload,
+		# which is effectively irreversible.
+		Strict-Transport-Security "max-age=31536000"
+
 		X-Content-Type-Options "nosniff"
 		Referrer-Policy "strict-origin-when-cross-origin"
-		X-Frame-Options "SAMEORIGIN"
+		# The site is never framed by anyone, including itself.
+		X-Frame-Options "DENY"
+		Permissions-Policy "accelerometer=(), camera=(), geolocation=(), gyroscope=(), magnetometer=(), microphone=(), payment=(), usb=(), interest-cohort=()"
+		Cross-Origin-Opener-Policy "same-origin"
+		Cross-Origin-Resource-Policy "same-origin"
+
+		# Content Security Policy.
+		#   default-src 'self'        everything comes from us unless listed
+		#   img-src ... jsdelivr      Pokemon sprites are served from that CDN
+		#   style-src 'unsafe-inline' the compiled bundle injects styles at
+		#                             runtime; scripts do NOT get the same
+		#                             latitude, which is the part that matters
+		#   no 'unsafe-eval', no wildcard hosts
+		#   frame-ancestors 'none'    modern equivalent of X-Frame-Options
+		Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://cdn.jsdelivr.net; font-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'; upgrade-insecure-requests"
+
+		# Do not advertise the server product.
 		-Server
+		-X-Powered-By
+	}
+
+	# --- API (same origin) -------------------------------------------------
+	handle /api/* {
+		# Bounded body so a large upload cannot exhaust memory on a 2 GB box.
+		request_body {
+			max_size 2MB
+		}
+		reverse_proxy backend:8000 {
+			# The backend trusts X-Forwarded-* only because it is reachable
+			# solely on the internal Docker network.
+			header_up X-Real-IP {remote_host}
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 30s
+				read_timeout 60s
+				write_timeout 60s
+			}
+		}
+	}
+
+	# --- everything else: the compiled SPA --------------------------------
+	handle {
+		reverse_proxy frontend:8080 {
+			transport http {
+				dial_timeout 5s
+				response_header_timeout 20s
+			}
+		}
+	}
+}
+
+# ------------------------------------------------------- www -> apex (301)
+
+www.{$DOMAIN} {
+	# Permanent, so browsers and search engines settle on the canonical host.
+	redir https://{$DOMAIN}{uri} permanent
+}
+
+# ------------------------------------------------ internal health listener
+#
+# Plain HTTP on a port that is NOT published to the host, so it is reachable
+# only from inside the Docker network. The public site block cannot serve this:
+# it matches on Host and redirects to HTTPS, whose certificate is issued for the
+# real domain, not for 127.0.0.1.
+:8081 {
+	handle /healthz {
+		respond "ok" 200
+	}
+	handle {
+		respond 404
 	}
 }

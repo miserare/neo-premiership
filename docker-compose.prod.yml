@@ -1,79 +1,229 @@
-# Production stack: TLS-terminating proxy, static frontend, no dev servers.
+# Production stack for pk-prem.com.
 #
+#   ./scripts/generate-secrets.sh
 #   docker compose -f docker-compose.prod.yml up -d --build
 #
-# Requires DOMAIN and ADMIN_TOKEN in .env. Run the migrations once the backend
-# is up: docker compose -f docker-compose.prod.yml exec backend alembic upgrade head
+# Only Caddy publishes host ports. PostgreSQL, FastAPI and nginx are reachable
+# only on the internal Docker network, so none of them is exposed to the
+# internet even if the host firewall were misconfigured.
+#
+# Sized for a 2 GB / 1 vCPU VPS: the limits below sum to well under 2 GB so the
+# host keeps headroom for the kernel, SSH and the build itself.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    # Bounded, or a chatty container eventually fills the disk and takes the
+    # whole box down with it.
+    max-size: "10m"
+    max-file: "3"
 
 services:
   db:
-    image: postgres:15-alpine
+    image: postgres:15.14-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-neo_premiership}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set a strong POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB:-neo_premiership}
+      POSTGRES_USER: ${POSTGRES_USER:?set POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB:?set POSTGRES_DB}
+      # _FILE keeps the password out of the environment, so it is not visible
+      # in `docker inspect` or to any child process.
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+    secrets:
+      - postgres_password
     volumes:
       - pgdata:/var/lib/postgresql/data
-    # Deliberately no `ports:`. Only the backend needs the database, and it
-    # reaches it over the internal compose network. Publishing 5432 would put
-    # Postgres on the public interface.
+    # Deliberately no `ports:`. Only the backend needs the database.
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neo_premiership} -d ${POSTGRES_DB:-neo_premiership}"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 10s
       timeout: 5s
       retries: 5
+      start_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    stop_grace_period: 30s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
+
+  # One-shot migration. Runs to completion before the backend is allowed to
+  # start, so the API never serves against a half-migrated schema.
+  migrate:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.prod
+    restart: "no"
+    logging: *default-logging
+    environment:
+      ENVIRONMENT: production
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      # The app composes DATABASE_URL from these; the password never enters
+      # the environment, only the mounted file does.
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: db
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+    secrets:
+      - postgres_password
+      - session_secret
+    depends_on:
+      db:
+        condition: service_healthy
+    # migrate.sh takes a PostgreSQL advisory lock, so two containers starting at
+    # once cannot both run alembic. It never seeds data.
+    entrypoint: ["/app/scripts/migrate.sh"]
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    deploy:
+      resources:
+        limits:
+          memory: 256M
 
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile.prod
     restart: unless-stopped
+    logging: *default-logging
     environment:
       ENVIRONMENT: production
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-neo_premiership}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB:-neo_premiership}
-      ADMIN_TOKEN: ${ADMIN_TOKEN:?set ADMIN_TOKEN - admin writes fail closed without it}
-      # Same-origin via Caddy, so this only matters if you split the API onto
-      # its own subdomain.
-      CORS_ORIGINS: ${CORS_ORIGINS:-https://${DOMAIN}}
+      DOMAIN: ${DOMAIN:?set DOMAIN}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_HOST: db
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_password
+      SESSION_SECRET_FILE: /run/secrets/session_secret
+      TRUST_PROXY_HEADERS: ${TRUST_PROXY_HEADERS:-true}
+      LEGACY_ADMIN_TOKEN_ENABLED: ${LEGACY_ADMIN_TOKEN_ENABLED:-false}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-12}
+      SESSION_IDLE_TIMEOUT_MINUTES: ${SESSION_IDLE_TIMEOUT_MINUTES:-60}
+      LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
+      LOGIN_IP_MAX_ATTEMPTS: ${LOGIN_IP_MAX_ATTEMPTS:-20}
+      LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      # Same-origin behind Caddy, so there is no cross-origin request to allow.
+      CORS_ORIGINS: ""
+    secrets:
+      - postgres_password
+      - session_secret
     depends_on:
       db:
         condition: service_healthy
-    # No published port: Caddy reaches it on the internal network.
+      migrate:
+        condition: service_completed_successfully
     expose:
       - "8000"
+    healthcheck:
+      # Readiness, not liveness: this one fails while PostgreSQL is unreachable,
+      # which is what should take the instance out of rotation.
+      # Sends the real Host header - TrustedHostMiddleware 400s anything else,
+      # and widening that list just for a probe would weaken it.
+      test: ["CMD", "python", "/app/scripts/healthcheck.py"]
+      interval: 15s
+      timeout: 6s
+      retries: 3
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      # The filesystem is read-only; these are the only paths that need writes.
+      - /tmp:size=64m,mode=1777
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.75"
+          memory: 512M
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile.prod
       args:
-        # Empty => the app calls /api on its own origin, which Caddy routes to
-        # the backend. Set this only if the API lives on another host.
-        VITE_API_URL: ${VITE_API_URL:-}
+        # Empty => the app calls /api on its own origin. Never a secret: build
+        # args are visible in image history, so nothing sensitive goes here.
+        VITE_API_URL: ""
     restart: unless-stopped
-    depends_on:
-      - backend
+    logging: *default-logging
     expose:
-      - "80"
+      - "8080"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8080/healthz || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+      - /var/cache/nginx:size=32m
+      - /var/run:size=8m
+    stop_grace_period: 10s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"
+          memory: 128M
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.8.4-alpine
     restart: unless-stopped
+    logging: *default-logging
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN to the site's hostname, e.g. pokemonpremiership.com}
+      DOMAIN: ${DOMAIN:?set DOMAIN}
     ports:
+      # The only host ports in the entire stack. 80 is required for the ACME
+      # HTTP challenge as well as the HTTPS redirect.
       - "80:80"
       - "443:443"
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      # Certificates must persist, or every restart re-requests them and you
-      # will hit Let's Encrypt rate limits.
+      # Certificates MUST persist. Without this, every restart re-requests them
+      # and Let's Encrypt rate limits will lock the domain out for a week.
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - frontend
-      - backend
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:8081/healthz || exit 1"]
+      interval: 20s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      # Binding 80/443 as a non-root process needs this and nothing else.
+      - NET_BIND_SERVICE
+    stop_grace_period: 20s
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
+secrets:
+  postgres_password:
+    file: ./secrets/postgres_password
+  session_secret:
+    file: ./secrets/session_secret
 
 volumes:
   pgdata:

@@ -9,8 +9,14 @@ venv/
 # Environment
 .env
 .env.*
-# ...but the template carries no secrets and every contributor needs it.
+# ...but the templates carry no secrets and every contributor needs them.
 !.env.example
+!.env.production.example
+
+# Production secret files. Never commit.
+secrets/
+*.pem
+*.key
 
 # Node
 node_modules/

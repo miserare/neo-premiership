@@ -1,29 +1,58 @@
-# Production image: no --reload, no bind-mounted source.
-FROM python:3.12-slim
+# Production image: no --reload, no bind-mounted source, non-root, and no
+# development or test packages at runtime.
 
-WORKDIR /app
+FROM python:3.12.8-slim AS build
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+# Build-only toolchain. It stays in this stage and never reaches the runtime
+# image, which keeps a compiler off the production filesystem.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends gcc \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
-RUN pip install -r requirements.txt
+WORKDIR /app
+COPY requirements.txt requirements-dev.txt ./
 
+# Install runtime dependencies only. requirements-dev.txt (pytest, ruff and
+# friends) is deliberately excluded - test tooling in a production image is
+# extra attack surface for no benefit.
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/venv/bin/pip install --no-cache-dir -r requirements.txt
+
+
+FROM python:3.12.8-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PATH="/opt/venv/bin:$PATH"
+
+# libpq is not needed (asyncpg speaks the wire protocol directly), so the
+# runtime image installs no additional packages at all.
+COPY --from=build /opt/venv /opt/venv
+
+WORKDIR /app
 COPY . .
 
-# Drop root once the install is done.
-RUN useradd --create-home --uid 10001 appuser && chown -R appuser /app
+# Drop root. A fixed uid keeps file ownership predictable across rebuilds.
+RUN useradd --create-home --uid 10001 appuser \
+    && chmod +x scripts/*.sh \
+    && chown -R appuser:appuser /app
+
 USER appuser
 
 EXPOSE 8000
 
-# --reload watches the filesystem and is for development only. --proxy-headers
-# lets uvicorn honour X-Forwarded-Proto from Caddy so generated URLs say https.
+# --reload watches the filesystem and is for development only.
+# --proxy-headers lets uvicorn honour X-Forwarded-Proto from Caddy so generated
+# URLs and cookie Secure decisions see the real scheme.
+# One worker: the box has 1 vCPU, and the in-process mutation limiter assumes a
+# single process (login throttling is in the database and unaffected).
 CMD ["uvicorn", "app.main:app", \
      "--host", "0.0.0.0", "--port", "8000", \
-     "--proxy-headers", "--forwarded-allow-ips", "*"]
+     "--workers", "1", \
+     "--proxy-headers", "--forwarded-allow-ips", "*", \
+     "--timeout-graceful-shutdown", "15"]

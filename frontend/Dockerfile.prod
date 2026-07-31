@@ -1,28 +1,42 @@
-# Production image: a static build served by nginx.
+# Production image: a static build served by unprivileged nginx.
 #
-# The dev image runs `vite dev`, which is a development server and must never
-# face the public internet. This builds the site once and serves the artifacts.
+# The development image runs `vite dev`, which is a development server and must
+# never face the internet. This builds the site once and serves the artifacts.
 
-FROM node:20-alpine AS build
+FROM node:20.18-alpine AS build
 
 WORKDIR /app
 
-COPY package*.json ./
+# Copy manifests first so the dependency layer is cached independently of source.
+COPY package.json package-lock.json ./
+# `npm ci` installs exactly the lockfile, unlike `npm install` which may resolve
+# newer versions and make the build non-reproducible.
 RUN npm ci
 
 COPY . .
 
-# Baked in at build time, not runtime - Vite inlines import.meta.env during the
-# build. Empty by default, which makes the frontend call /api on its own origin
-# (the reverse proxy routes it to the backend), so there is no CORS to satisfy.
+# Baked in at build time - Vite inlines import.meta.env during the build.
+# Empty by default, which makes the app call /api on its own origin.
+#
+# Build args are visible in image history, so this must never carry a secret.
 ARG VITE_API_URL=""
 ENV VITE_API_URL=$VITE_API_URL
 
-RUN npm run build
+RUN npm run build \
+    # Fail the build rather than ship a bundle pointing at a developer machine.
+    && ! grep -rqE "localhost:[0-9]+|127\.0\.0\.1" dist/assets/ \
+    || (echo "BUILD REJECTED: development URL found in bundle" >&2; exit 1)
 
-FROM nginx:1.27-alpine
+# nginx-unprivileged runs as a non-root user and listens on 8080 out of the box,
+# so it needs no capabilities and works under a read-only root filesystem.
+FROM nginxinc/nginx-unprivileged:1.27-alpine
 
-COPY --from=build /app/dist /usr/share/nginx/html
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The compiled site itself. Without this nginx serves its default welcome page.
+COPY --from=build --chown=nginx:nginx /app/dist /usr/share/nginx/html
 
-EXPOSE 80
+# Default config ships a server block on 8080; replace it with ours.
+COPY --chown=nginx:nginx nginx.conf /etc/nginx/conf.d/default.conf
+
+USER nginx
+
+EXPOSE 8080
