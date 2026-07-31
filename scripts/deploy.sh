@@ -163,7 +163,11 @@ mkdir -p .deploy
     echo "commit=$RELEASE"
     echo "dirty_files=$DIRTY"
     echo "images:"
-    $COMPOSE images --format '  {{.Service}} {{.Repository}}:{{.Tag}} {{.ID}}'
+    # `docker compose images` has no Service field in its Go template; the
+    # image id per service is what a rollback actually needs.
+    $COMPOSE images -q | while read -r id; do
+        echo "  $(docker image inspect --format '{{index .RepoTags 0}} {{.Id}}' "$id" 2>/dev/null || echo "$id")"
+    done
 } > .deploy/last-release.txt
 cat .deploy/last-release.txt | sed 's/^/  /'
 
