@@ -2,6 +2,7 @@ import uuid
 from collections import defaultdict
 
 from app.models.match import Match, MatchStatus
+from app.models.playoff_round import PlayoffRound
 from app.models.season_entry import SeasonEntry
 from app.schemas.player import PlayerSummary
 from app.schemas.season import BracketRound, StandingsEntry, StandingsGroup
@@ -45,20 +46,33 @@ def build_standings(season_entries: list[SeasonEntry], group_matches: list[Match
     return result
 
 
-def build_bracket(playoff_matches: list[Match]) -> list[BracketRound]:
-    rounds: dict[tuple[int, str], list[Match]] = defaultdict(list)
+def _bracket_position(match: Match) -> tuple[int, int, str]:
+    """Sort key for a match inside its round: bracket position first, then id
+    purely as a deterministic tie-breaker. Matches with no position yet sort
+    after the placed ones rather than jumping to the front."""
+    return (1 if match.bracket_order is None else 0, match.bracket_order or 0, str(match.id))
+
+
+def build_bracket(rounds: list[PlayoffRound], playoff_matches: list[Match]) -> list[BracketRound]:
+    """The public bracket, one entry per round, in display_order.
+
+    Driven by the round rows, not by the matches: a round that has been planned
+    but not yet drawn still gets its column, in its proper place. Labels and
+    dates play no part in the ordering.
+    """
+    by_round: dict[uuid.UUID, list[Match]] = defaultdict(list)
     for match in playoff_matches:
-        label = match.round_label or "Playoffs"
-        order = match.round_order if match.round_order is not None else 0
-        rounds[(order, label)].append(match)
+        if match.playoff_round_id is not None:
+            by_round[match.playoff_round_id].append(match)
 
     return [
         BracketRound(
-            round_label=label,
-            round_order=order,
-            matches=[
-                to_match_read(m) for m in sorted(matches, key=lambda m: (m.bracket_order is None, m.bracket_order or 0))
-            ],
+            id=playoff_round.id,
+            label=playoff_round.label,
+            display_order=playoff_round.display_order,
+            round_label=playoff_round.label,
+            round_order=playoff_round.display_order,
+            matches=[to_match_read(m) for m in sorted(by_round.get(playoff_round.id, []), key=_bracket_position)],
         )
-        for (order, label), matches in sorted(rounds.items(), key=lambda item: item[0])
+        for playoff_round in rounds
     ]

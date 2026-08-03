@@ -8,6 +8,7 @@ import type {
   MatchRead,
   MatchStage,
   MatchStatus,
+  PlayoffRound,
   PokemonInput,
   SeasonEntryRead,
   SeasonRosterPokemon,
@@ -30,7 +31,12 @@ interface CreateFormState {
   home_player_id: string;
   away_player_id: string;
   stage: MatchStage;
+  /** Group stage only - the free-text group/matchday label. */
   round_label: string;
+  /** Playoffs only - which round this match belongs to. */
+  playoff_round_id: string;
+  /** Playoffs only - the match's position within that round, 1 = top. */
+  bracket_order: string;
   scheduled_at: string;
 }
 
@@ -39,6 +45,8 @@ const EMPTY_CREATE: CreateFormState = {
   away_player_id: "",
   stage: "group",
   round_label: "",
+  playoff_round_id: "",
+  bracket_order: "",
   scheduled_at: "",
 };
 
@@ -66,6 +74,12 @@ export default function AdminMatchesPage() {
     () => (seasonId ? api.seasons.roster.list(seasonId) : Promise.resolve([])),
     [seasonId],
   );
+  const { data: playoffRounds, refetch: refetchRounds } = useAsync<PlayoffRound[]>(
+    () => (seasonId ? api.seasons.playoffRounds.list(seasonId) : Promise.resolve([])),
+    [seasonId],
+  );
+  // Already in display_order from the API; presented as-is.
+  const rounds = playoffRounds ?? [];
 
   const [createForm, setCreateForm] = useState<CreateFormState>(EMPTY_CREATE);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -86,17 +100,31 @@ export default function AdminMatchesPage() {
       setCreateError("A match needs two different players.");
       return;
     }
+    const isPlayoff = createForm.stage === "playoffs";
+    if (isPlayoff && !createForm.playoff_round_id) {
+      setCreateError("Choose which playoff round this match belongs to.");
+      return;
+    }
     try {
       await api.matches.create({
         season_id: seasonId,
         home_player_id: createForm.home_player_id,
         away_player_id: createForm.away_player_id,
         stage: createForm.stage,
-        round_label: createForm.round_label.trim() || null,
+        // The two stages carry different fields, and neither leaks into the
+        // other: a group match never sends a round, a playoff match never
+        // sends a label.
+        playoff_round_id: isPlayoff ? createForm.playoff_round_id : null,
+        bracket_order:
+          isPlayoff && createForm.bracket_order.trim() !== ""
+            ? Number(createForm.bracket_order)
+            : null,
+        round_label: isPlayoff ? null : createForm.round_label.trim() || null,
         scheduled_at: fromLocalInput(createForm.scheduled_at),
       });
       setCreateForm(EMPTY_CREATE);
       refetch();
+      refetchRounds();
     } catch (err) {
       setCreateError(err instanceof ApiError ? err.message : "Failed to create match.");
     }
@@ -187,23 +215,80 @@ export default function AdminMatchesPage() {
                 id="create-stage"
                 value={createForm.stage}
                 onChange={(event) =>
-                  setCreateForm({ ...createForm, stage: event.target.value as MatchStage })
+                  // Switching stage clears the other stage's fields, so a round
+                  // chosen for a playoff match cannot be carried into a group
+                  // match by accident.
+                  setCreateForm({
+                    ...createForm,
+                    stage: event.target.value as MatchStage,
+                    playoff_round_id: "",
+                    bracket_order: "",
+                    round_label: "",
+                  })
                 }
               >
                 <option value="group">Group</option>
                 <option value="playoffs">Playoffs</option>
               </select>
             </div>
-            <div className="admin-form__row">
-              <label htmlFor="create-round">Round label</label>
-              <input
-                id="create-round"
-                value={createForm.round_label}
-                onChange={(event) => setCreateForm({ ...createForm, round_label: event.target.value })}
-                placeholder="e.g. Semifinal"
-                maxLength={64}
-              />
-            </div>
+
+            {createForm.stage === "group" ? (
+              <div className="admin-form__row">
+                <label htmlFor="create-round">Group label</label>
+                <input
+                  id="create-round"
+                  value={createForm.round_label}
+                  onChange={(event) =>
+                    setCreateForm({ ...createForm, round_label: event.target.value })
+                  }
+                  placeholder="e.g. Group A"
+                  maxLength={64}
+                />
+              </div>
+            ) : rounds.length === 0 ? (
+              <p role="alert" className="admin-form__error">
+                This season has no playoff rounds yet. Create one under Rounds first, then come
+                back to add matches to it.
+              </p>
+            ) : (
+              <>
+                <div className="admin-form__row">
+                  <label htmlFor="create-playoff-round">Playoff round</label>
+                  <select
+                    id="create-playoff-round"
+                    value={createForm.playoff_round_id}
+                    onChange={(event) =>
+                      setCreateForm({ ...createForm, playoff_round_id: event.target.value })
+                    }
+                    required
+                  >
+                    <option value="">Select...</option>
+                    {rounds.map((round) => (
+                      <option key={round.id} value={round.id}>
+                        {round.display_order}. {round.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="admin-form__row">
+                  <label htmlFor="create-bracket-order">Position in round</label>
+                  <input
+                    id="create-bracket-order"
+                    type="number"
+                    min={1}
+                    step={1}
+                    value={createForm.bracket_order}
+                    onChange={(event) =>
+                      setCreateForm({ ...createForm, bracket_order: event.target.value })
+                    }
+                  />
+                  <p className="admin-form__hint">
+                    Position 1 is the first (top) match of the round. Each position can be used
+                    once per round; leave a number unused for a bye.
+                  </p>
+                </div>
+              </>
+            )}
             <div className="admin-form__row">
               <label htmlFor="create-scheduled">Scheduled for</label>
               <input
@@ -275,11 +360,13 @@ export default function AdminMatchesPage() {
                 {expandedId === match.id && (
                   <MatchEditor
                     match={match}
+                    playoffRounds={rounds}
                     homeRosterHistory={rosterHistoryFor(match.home_player.id)}
                     awayRosterHistory={rosterHistoryFor(match.away_player.id)}
                     onSaved={() => {
                       refetch();
                       refetchRoster();
+                      refetchRounds();
                     }}
                   />
                 )}
@@ -294,6 +381,7 @@ export default function AdminMatchesPage() {
 
 interface MatchEditorProps {
   match: MatchRead;
+  playoffRounds: PlayoffRound[];
   homeRosterHistory: SeasonRosterPokemon[];
   awayRosterHistory: SeasonRosterPokemon[];
   onSaved: () => void;
@@ -327,13 +415,19 @@ function eligibleTeamOptions(
 
 function MatchEditor({
   match,
+  playoffRounds,
   homeRosterHistory,
   awayRosterHistory,
   onSaved,
 }: MatchEditorProps) {
+  const isPlayoff = match.stage === "playoffs";
   const [status, setStatus] = useState<MatchStatus>(match.status);
   const [winnerId, setWinnerId] = useState(match.winner_id ?? "");
   const [roundLabel, setRoundLabel] = useState(match.round_label ?? "");
+  const [playoffRoundId, setPlayoffRoundId] = useState(match.playoff_round_id ?? "");
+  const [bracketOrder, setBracketOrder] = useState(
+    match.bracket_order === null ? "" : String(match.bracket_order),
+  );
   const [scheduledAt, setScheduledAt] = useState(toLocalInput(match.scheduled_at));
   const [completedAt, setCompletedAt] = useState(toLocalInput(match.completed_at));
   const [homeScore, setHomeScore] = useState(match.home_score === null ? "" : String(match.home_score));
@@ -373,7 +467,14 @@ function MatchEditor({
       await api.matches.update(match.id, {
         status,
         winner_id: winnerId || null,
-        round_label: roundLabel.trim() || null,
+        // A playoff match's name comes from its round; only a group match
+        // carries a label of its own.
+        ...(isPlayoff
+          ? {
+              playoff_round_id: playoffRoundId || null,
+              bracket_order: bracketOrder.trim() === "" ? null : Number(bracketOrder),
+            }
+          : { round_label: roundLabel.trim() || null }),
         scheduled_at: fromLocalInput(scheduledAt),
         completed_at: fromLocalInput(completedAt),
         home_score: homeScore.trim() === "" ? null : Number(homeScore),
@@ -447,15 +548,52 @@ function MatchEditor({
             <option value={match.away_player.id}>{match.away_player.username}</option>
           </select>
         </div>
-        <div className="admin-form__row">
-          <label htmlFor={`round-${match.id}`}>Round label</label>
-          <input
-            id={`round-${match.id}`}
-            value={roundLabel}
-            onChange={(event) => setRoundLabel(event.target.value)}
-            maxLength={64}
-          />
-        </div>
+        {isPlayoff ? (
+          <>
+            <div className="admin-form__row">
+              <label htmlFor={`round-${match.id}`}>Playoff round</label>
+              <select
+                id={`round-${match.id}`}
+                value={playoffRoundId}
+                onChange={(event) => setPlayoffRoundId(event.target.value)}
+              >
+                <option value="">Unassigned</option>
+                {playoffRounds.map((round) => (
+                  <option key={round.id} value={round.id}>
+                    {round.display_order}. {round.label}
+                  </option>
+                ))}
+              </select>
+              <p className="admin-form__hint">
+                Rename a round under Rounds - the name is shared by every match in it.
+              </p>
+            </div>
+            <div className="admin-form__row">
+              <label htmlFor={`slot-${match.id}`}>Position in round</label>
+              <input
+                id={`slot-${match.id}`}
+                type="number"
+                min={1}
+                step={1}
+                value={bracketOrder}
+                onChange={(event) => setBracketOrder(event.target.value)}
+              />
+              <p className="admin-form__hint">
+                Position 1 is the first (top) match of the round.
+              </p>
+            </div>
+          </>
+        ) : (
+          <div className="admin-form__row">
+            <label htmlFor={`round-${match.id}`}>Group label</label>
+            <input
+              id={`round-${match.id}`}
+              value={roundLabel}
+              onChange={(event) => setRoundLabel(event.target.value)}
+              maxLength={64}
+            />
+          </div>
+        )}
         <div className="admin-form__row">
           <label htmlFor={`sched-${match.id}`}>Scheduled for</label>
           <input

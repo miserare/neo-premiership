@@ -122,11 +122,17 @@ export default function SeasonDetailPage() {
       <section aria-labelledby="bracket-heading">
         <h2 id="bracket-heading">Playoff Bracket</h2>
         {season.bracket.length > 0 ? (
-          <div className="bracket">
+          // Rendered in exactly the order the API returned. No sorting, no
+          // label-derived classes, no layout that depends on how many rounds
+          // there are - ten columns lay out the same way four do, and scroll.
+          <div className="bracket" role="region" aria-labelledby="bracket-heading" tabIndex={0}>
             {season.bracket.map((round) => (
-              <div key={`${round.round_order}-${round.round_label}`} className="bracket-round">
-                <h3>{round.round_label}</h3>
+              <section key={round.id} className="bracket-round" aria-labelledby={`round-${round.id}`}>
+                <h3 id={`round-${round.id}`}>{round.label}</h3>
                 <ul className="bracket-round__matches">
+                  {round.matches.length === 0 && (
+                    <li className="bracket-round__empty">Not drawn yet</li>
+                  )}
                   {round.matches.map((match) => (
                     <li key={match.id} className="bracket-match">
                       <div
@@ -166,7 +172,7 @@ export default function SeasonDetailPage() {
                     </li>
                   ))}
                 </ul>
-              </div>
+              </section>
             ))}
           </div>
         ) : (

@@ -25,6 +25,7 @@ from app.models import (  # noqa: F401 - imported for their side effect on Base.
     MatchGame,
     MatchPokemon,
     Player,
+    PlayoffRound,
     Season,
     SeasonEntry,
     SeasonRosterPokemon,

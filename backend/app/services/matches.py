@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from app.models.match import Match
+from app.models.match import Match, MatchStage
 from app.schemas.match import MatchGameRead, MatchRead, MatchSeries
 from app.schemas.player import PlayerSummary
 from app.schemas.pokemon import MatchPokemonRead
@@ -28,8 +28,32 @@ def _games_for(match: Match) -> list[MatchGameRead]:
     return []
 
 
+def round_name(match: Match) -> str | None:
+    """What to call a match's round in prose (stream labels and the like)."""
+    return _round_fields(match)[0]
+
+
+def _round_fields(match: Match) -> tuple[str | None, int | None]:
+    """The label and position to report for a match.
+
+    A playoff match takes both from the round it references. If it references
+    none - it has been unassigned, or was never placed - it has no round name,
+    and the legacy column is deliberately NOT consulted: falling back to it is
+    the stale-copy behaviour this release exists to remove.
+
+    A group-stage match has no round entity at all; its round_label is its own
+    group/matchday label, which is current, not a copy of anything.
+    """
+    if match.playoff_round is not None:
+        return match.playoff_round.label, match.playoff_round.display_order
+    if match.stage == MatchStage.PLAYOFFS:
+        return None, None
+    return match.round_label, None
+
+
 def to_match_read(match: Match) -> MatchRead:
     games = _games_for(match)
+    round_label, round_order = _round_fields(match)
     home_wins = sum(1 for game in games if game.winner_id == match.home_player_id)
     away_wins = sum(1 for game in games if game.winner_id == match.away_player_id)
 
@@ -41,9 +65,10 @@ def to_match_read(match: Match) -> MatchRead:
         winner_id=match.winner_id,
         status=match.status,
         stage=match.stage,
-        round_label=match.round_label,
-        round_order=match.round_order,
+        playoff_round_id=match.playoff_round_id,
         bracket_order=match.bracket_order,
+        round_label=round_label,
+        round_order=round_order,
         scheduled_at=match.scheduled_at,
         completed_at=match.completed_at,
         home_score=match.home_score,

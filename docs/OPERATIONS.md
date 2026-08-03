@@ -119,6 +119,16 @@ If `current` and `heads` differ, migrations are pending.
    Downgrades can lose data. `c58b74e91a20` explicitly deletes released roster
    history on downgrade, because the old schema cannot represent it.
 
+   `e4a7c2b8d5f1` drops the `playoff_rounds` table, so rounds planned but not
+   yet drawn are lost. Matches are not: the legacy `round_label`/`round_order`
+   columns are kept in step by the application precisely so the previous
+   release still renders the bracket in the right order after a downgrade.
+
+   **Downgrade before transferring an older tree.** A release older than a
+   migration does not contain that migration's file, so Alembic cannot find the
+   revision to downgrade *from*. Run the downgrade from the current checkout
+   first, then transfer the older tree and deploy.
+
 ### Stuck advisory lock
 
 If a `migrate` container was killed mid-run, its lock is released automatically

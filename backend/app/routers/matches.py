@@ -1,21 +1,26 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin
 from app.crud import match_games as game_crud
 from app.crud import matches as crud
 from app.crud import players as player_crud
+from app.crud import playoff_rounds as round_crud
 from app.crud import pokemon as pokemon_crud
 from app.crud import seasons as season_crud
 from app.database import get_db
-from app.models.match import MatchStatus
+from app.models.match import Match, MatchStage, MatchStatus
 from app.schemas.match import MatchCreate, MatchGamesSet, MatchRead, MatchUpdate
 from app.schemas.pokemon import MatchPokemonSet
 from app.services.matches import to_match_read
 
 router = APIRouter(prefix="/matches", tags=["matches"])
+
+_DUPLICATE_SLOT = "another match already occupies that position in this round"
 
 
 async def _get_match_or_404(db: AsyncSession, match_id: uuid.UUID, refresh: bool = False):
@@ -23,6 +28,57 @@ async def _get_match_or_404(db: AsyncSession, match_id: uuid.UUID, refresh: bool
     if match is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Match not found")
     return match
+
+
+async def _validate_round(
+    db: AsyncSession,
+    *,
+    season_id: uuid.UUID,
+    stage: MatchStage,
+    playoff_round_id: uuid.UUID | None,
+) -> None:
+    """A playoff round must belong to the same season; a group match must not
+    reference one at all. Checked here rather than trusting the client, because
+    a round id from another season would otherwise put a match in a bracket its
+    players never played in."""
+    if playoff_round_id is None:
+        return
+    if stage != MatchStage.PLAYOFFS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a group-stage match must not reference a playoff round",
+        )
+    playoff_round = await round_crud.get_round_by_id(db, playoff_round_id)
+    if playoff_round is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="playoff_round_id does not reference an existing round"
+        )
+    if playoff_round.season_id != season_id:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="playoff_round_id must reference a round of this match's own season",
+        )
+
+
+async def _validate_slot_free(
+    db: AsyncSession,
+    *,
+    playoff_round_id: uuid.UUID | None,
+    bracket_order: int | None,
+    exclude_match_id: uuid.UUID | None = None,
+) -> None:
+    """Reject a taken bracket position with a message an administrator can act
+    on. The partial unique index is still the real guarantee - this only turns
+    it into a readable error before the write is attempted."""
+    if playoff_round_id is None or bracket_order is None:
+        return
+    stmt = select(Match.id).where(
+        Match.playoff_round_id == playoff_round_id, Match.bracket_order == bracket_order
+    )
+    if exclude_match_id is not None:
+        stmt = stmt.where(Match.id != exclude_match_id)
+    if (await db.execute(stmt)).first() is not None:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_DUPLICATE_SLOT)
 
 
 @router.get("", response_model=list[MatchRead])
@@ -54,7 +110,17 @@ async def create_match(match_in: MatchCreate, db: AsyncSession = Depends(get_db)
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="away_player_id does not reference an existing player"
         )
-    match = await crud.create_match(db, match_in)
+    await _validate_round(
+        db, season_id=match_in.season_id, stage=match_in.stage, playoff_round_id=match_in.playoff_round_id
+    )
+    await _validate_slot_free(
+        db, playoff_round_id=match_in.playoff_round_id, bracket_order=match_in.bracket_order
+    )
+    try:
+        match = await crud.create_match(db, match_in)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_DUPLICATE_SLOT) from None
     return to_match_read(match)
 
 
@@ -89,7 +155,28 @@ async def update_match(match_id: uuid.UUID, match_in: MatchUpdate, db: AsyncSess
             detail="a completed match requires completed_at for Elo ordering",
         )
 
-    updated = await crud.update_match(db, match, match_in)
+    # A round move is validated against the merged state too: the incoming
+    # round id if one was sent, otherwise whatever the match already has.
+    fields = match_in.model_fields_set
+    playoff_round_id = match_in.playoff_round_id if "playoff_round_id" in fields else match.playoff_round_id
+    bracket_order = match_in.bracket_order if "bracket_order" in fields else match.bracket_order
+    if "round_label" in fields and match_in.round_label is not None and match.stage == MatchStage.PLAYOFFS:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a playoff match takes its label from its round; move it to another round instead",
+        )
+    await _validate_round(
+        db, season_id=match.season_id, stage=match.stage, playoff_round_id=playoff_round_id
+    )
+    await _validate_slot_free(
+        db, playoff_round_id=playoff_round_id, bracket_order=bracket_order, exclude_match_id=match.id
+    )
+
+    try:
+        updated = await crud.update_match(db, match, match_in)
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=_DUPLICATE_SLOT) from None
     return to_match_read(updated)
 
 

@@ -143,9 +143,12 @@ export interface MatchRead {
   winner_id: string | null;
   status: MatchStatus;
   stage: MatchStage;
+  playoff_round_id: string | null;
+  bracket_order: number | null;
+  /** Derived from the referenced round for playoff matches; the group/matchday
+   * label for group matches. Never a stale per-match copy. */
   round_label: string | null;
   round_order: number | null;
-  bracket_order: number | null;
   scheduled_at: string | null;
   completed_at: string | null;
   home_score: number | null;
@@ -165,9 +168,11 @@ export interface MatchCreateInput {
   away_player_id: string;
   stage: MatchStage;
   status?: MatchStatus;
-  round_label?: string | null;
-  round_order?: number | null;
+  /** Playoff matches only; a group match must leave this unset. */
+  playoff_round_id?: string | null;
   bracket_order?: number | null;
+  /** Group matches only - a playoff match takes its label from its round. */
+  round_label?: string | null;
   scheduled_at?: string | null;
   completed_at?: string | null;
   winner_id?: string | null;
@@ -180,9 +185,9 @@ export interface MatchCreateInput {
 // Season, participants, and stage are immutable after creation.
 export interface MatchUpdateInput {
   status?: MatchStatus;
-  round_label?: string | null;
-  round_order?: number | null;
+  playoff_round_id?: string | null;
   bracket_order?: number | null;
+  round_label?: string | null;
   scheduled_at?: string | null;
   completed_at?: string | null;
   winner_id?: string | null;
@@ -296,10 +301,32 @@ export interface StandingsGroup {
 }
 
 // Mirrors backend/app/schemas/season.py::BracketRound
+// The array order IS the column order. Never re-sort a bracket in the client -
+// `display_order` is the server's answer, and labels carry no ordering at all.
 export interface BracketRound {
+  id: string;
+  label: string;
+  display_order: number;
+  /** @deprecated Mirror of `label`, kept for older callers. */
   round_label: string;
+  /** @deprecated Mirror of `display_order`, kept for older callers. */
   round_order: number;
   matches: MatchRead[];
+}
+
+// Mirrors backend/app/schemas/playoff_round.py::PlayoffRoundRead
+export interface PlayoffRound {
+  id: string;
+  season_id: string;
+  label: string;
+  display_order: number;
+  match_count: number;
+}
+
+// Mirrors backend/app/schemas/playoff_round.py::PlayoffRoundCreate
+export interface PlayoffRoundCreateInput {
+  label: string;
+  display_order?: number | null;
 }
 
 // Mirrors backend/app/schemas/season.py::SeasonStream

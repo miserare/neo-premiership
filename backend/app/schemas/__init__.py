@@ -23,6 +23,12 @@ from app.schemas.player import (
     PlayerSummary,
     PlayerUpdate,
 )
+from app.schemas.playoff_round import (
+    PlayoffRoundCreate,
+    PlayoffRoundRead,
+    PlayoffRoundReorder,
+    PlayoffRoundUpdate,
+)
 from app.schemas.pokemon import (
     MatchPokemonSet,
     MatchPokemonRead,
@@ -85,6 +91,10 @@ __all__ = [
     "PlayerSeasonRecord",
     "PlayerSummary",
     "PlayerUpdate",
+    "PlayoffRoundCreate",
+    "PlayoffRoundRead",
+    "PlayoffRoundReorder",
+    "PlayoffRoundUpdate",
     "RosterEntry",
     "SeasonCreate",
     "SeasonDetail",

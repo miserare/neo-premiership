@@ -5,23 +5,59 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.match import Match, MatchStage
+from app.models.playoff_round import PlayoffRound
 from app.schemas.match import MatchCreate, MatchUpdate
 from app.services.elo import recalculate_elo_ratings
 from app.utils.serialization import stringify_urls
 
 _URL_FIELDS = ("replay_url", "youtube_url")
 
+# A match's round position, for ordering, without joining PlayoffRound into the
+# statement itself (which would collide with the joinedload's own alias).
+_ROUND_DISPLAY_ORDER = (
+    select(PlayoffRound.display_order).where(PlayoffRound.id == Match.playoff_round_id).scalar_subquery()
+)
+
 
 def _with_participants(stmt: Select) -> Select:
     # games/pokemon are selectinload rather than joinedload: they're collections,
     # and joining two of them onto the same row would multiply it out.
+    #
+    # playoff_round is joined here rather than only in the season-detail path so
+    # that every caller - match detail, player detail, the home page stream, the
+    # admin list - can read the round without tripping lazy="raise".
     return stmt.options(
         joinedload(Match.home_player),
         joinedload(Match.away_player),
         joinedload(Match.season),
+        joinedload(Match.playoff_round),
         selectinload(Match.games),
         selectinload(Match.pokemon),
     )
+
+
+async def _sync_legacy_round_columns(db: AsyncSession, match: Match) -> None:
+    """Mirror the round's name and position onto the match's legacy columns.
+
+    Nothing in this release reads them. They are written so that rolling back
+    to the previous release - which sorted the bracket from these columns -
+    still renders the right order for matches created or moved in between.
+    """
+    if match.playoff_round_id is None:
+        match.round_order = None
+        if match.stage == MatchStage.PLAYOFFS:
+            # Unassigned from its round: the copy of that round's name has to go
+            # with it, or a rollback would file the match under a round it no
+            # longer belongs to. A GROUP match keeps its round_label - that is
+            # its own group/matchday label, not a copy of a round's.
+            match.round_label = None
+        return
+    result = await db.execute(
+        select(PlayoffRound.label, PlayoffRound.display_order).where(PlayoffRound.id == match.playoff_round_id)
+    )
+    row = result.first()
+    if row is not None:
+        match.round_label, match.round_order = row
 
 
 async def get_matches_for_player(db: AsyncSession, player_id: uuid.UUID) -> list[Match]:
@@ -36,11 +72,16 @@ async def get_matches_for_season(db: AsyncSession, season_id: uuid.UUID, stage: 
     stmt = _with_participants(select(Match)).where(Match.season_id == season_id)
     if stage is not None:
         stmt = stmt.where(Match.stage == stage)
+    # Rounds order by their own display_order; matches inside a round by
+    # bracket position, then by id so the result is always deterministic.
+    # Dates only break ties between matches that have no bracket position -
+    # they never decide which round comes first.
     stmt = stmt.order_by(
         Match.stage,
-        Match.round_order.nullsfirst(),
+        _ROUND_DISPLAY_ORDER.nullsfirst(),
         Match.bracket_order.nullsfirst(),
         Match.scheduled_at.nullslast(),
+        Match.id,
     )
     result = await db.execute(stmt)
     return list(result.unique().scalars().all())
@@ -72,6 +113,7 @@ async def create_match(db: AsyncSession, match_in: MatchCreate) -> Match:
     data = stringify_urls(match_in.model_dump(), _URL_FIELDS)
     match = Match(**data)
     db.add(match)
+    await _sync_legacy_round_columns(db, match)
     await db.flush()
     await recalculate_elo_ratings(db)
     await db.commit()
@@ -84,10 +126,16 @@ async def update_match(db: AsyncSession, match: Match, match_in: MatchUpdate) ->
     data = stringify_urls(match_in.model_dump(exclude_unset=True), _URL_FIELDS)
     for field, value in data.items():
         setattr(match, field, value)
+    if "playoff_round_id" in data:
+        await _sync_legacy_round_columns(db, match)
     await db.flush()
     await recalculate_elo_ratings(db)
     await db.commit()
-    loaded = await get_match_by_id(db, match.id)
+    # refresh=True: `match` is already in the identity map with playoff_round
+    # loaded, and with expire_on_commit=False a plain re-query will not replace
+    # an already-populated relationship - so a match moved to another round
+    # would come back still reporting the old one.
+    loaded = await get_match_by_id(db, match.id, refresh=True)
     assert loaded is not None
     return loaded
 

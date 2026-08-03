@@ -6,10 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.auth import require_admin
 from app.crud import players as player_crud
+from app.crud import playoff_rounds as round_crud
 from app.crud import pokemon as pokemon_crud
 from app.crud import season_entries as entry_crud
 from app.crud import seasons as crud
 from app.database import get_db
+from app.schemas.playoff_round import (
+    PlayoffRoundCreate,
+    PlayoffRoundRead,
+    PlayoffRoundReorder,
+    PlayoffRoundUpdate,
+)
 from app.schemas.pokemon import RosterPokemonSet
 from app.schemas.season import (
     SeasonCreate,
@@ -88,6 +95,143 @@ async def delete_season(season_id: uuid.UUID, db: AsyncSession = Depends(get_db)
     if season is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     await crud.delete_season(db, season)
+
+
+# --------------------------------------------------------- playoff rounds
+
+
+async def _season_or_404(db: AsyncSession, season_id: uuid.UUID):
+    season = await crud.get_season_by_id(db, season_id)
+    if season is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
+    return season
+
+
+async def _round_or_404(db: AsyncSession, season_id: uuid.UUID, round_id: uuid.UUID):
+    playoff_round = await round_crud.get_round_by_id(db, round_id)
+    if playoff_round is None or playoff_round.season_id != season_id:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Playoff round not found")
+    return playoff_round
+
+
+@router.get("/{season_id}/playoff-rounds", response_model=list[PlayoffRoundRead])
+async def list_playoff_rounds(season_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> list[PlayoffRoundRead]:
+    await _season_or_404(db, season_id)
+    rounds = await round_crud.get_rounds_for_season(db, season_id)
+    counts = await round_crud.count_matches_by_round(db, season_id)
+    return [
+        PlayoffRoundRead(
+            id=playoff_round.id,
+            season_id=playoff_round.season_id,
+            label=playoff_round.label,
+            display_order=playoff_round.display_order,
+            match_count=counts.get(playoff_round.id, 0),
+        )
+        for playoff_round in rounds
+    ]
+
+
+@router.post(
+    "/{season_id}/playoff-rounds",
+    response_model=PlayoffRoundRead,
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_admin)],
+)
+async def create_playoff_round(
+    season_id: uuid.UUID, round_in: PlayoffRoundCreate, db: AsyncSession = Depends(get_db)
+) -> PlayoffRoundRead:
+    await _season_or_404(db, season_id)
+    try:
+        playoff_round = await round_crud.create_round(db, season_id, round_in)
+    except round_crud.DuplicatePositionError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except IntegrityError:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="another round in this season is already at that position",
+        ) from None
+    return PlayoffRoundRead.model_validate(playoff_round)
+
+
+@router.put(
+    "/{season_id}/playoff-rounds/reorder",
+    response_model=list[PlayoffRoundRead],
+    dependencies=[Depends(require_admin)],
+)
+async def reorder_playoff_rounds(
+    season_id: uuid.UUID, reorder_in: PlayoffRoundReorder, db: AsyncSession = Depends(get_db)
+) -> list[PlayoffRoundRead]:
+    """Rewrite the season's round order from a complete ordered list of ids.
+
+    Whole-list and transactional, so the bracket is never observed with two
+    rounds in one position or a reorder applied halfway.
+    """
+    await _season_or_404(db, season_id)
+    try:
+        rounds = await round_crud.reorder_rounds(db, season_id, reorder_in.round_ids)
+    except ValueError as exc:
+        await db.rollback()
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    counts = await round_crud.count_matches_by_round(db, season_id)
+    return [
+        PlayoffRoundRead(
+            id=playoff_round.id,
+            season_id=playoff_round.season_id,
+            label=playoff_round.label,
+            display_order=playoff_round.display_order,
+            match_count=counts.get(playoff_round.id, 0),
+        )
+        for playoff_round in rounds
+    ]
+
+
+@router.patch(
+    "/{season_id}/playoff-rounds/{round_id}",
+    response_model=PlayoffRoundRead,
+    dependencies=[Depends(require_admin)],
+)
+async def rename_playoff_round(
+    season_id: uuid.UUID,
+    round_id: uuid.UUID,
+    round_in: PlayoffRoundUpdate,
+    db: AsyncSession = Depends(get_db),
+) -> PlayoffRoundRead:
+    """Rename only - the round keeps its position."""
+    await _season_or_404(db, season_id)
+    playoff_round = await _round_or_404(db, season_id, round_id)
+    updated = await round_crud.update_round(db, playoff_round, round_in)
+    return PlayoffRoundRead(
+        id=updated.id,
+        season_id=updated.season_id,
+        label=updated.label,
+        display_order=updated.display_order,
+        match_count=await round_crud.count_matches_in_round(db, updated.id),
+    )
+
+
+@router.delete(
+    "/{season_id}/playoff-rounds/{round_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    dependencies=[Depends(require_admin)],
+)
+async def delete_playoff_round(
+    season_id: uuid.UUID, round_id: uuid.UUID, db: AsyncSession = Depends(get_db)
+) -> None:
+    await _season_or_404(db, season_id)
+    playoff_round = await _round_or_404(db, season_id, round_id)
+    try:
+        await round_crud.delete_round(db, playoff_round)
+    except round_crud.RoundNotEmptyError as exc:
+        await db.rollback()
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"This round still contains {exc.match_count} match(es). "
+                "Move them to another round or delete them first."
+            ),
+        ) from exc
 
 
 @router.get("/{season_id}/roster", response_model=list[SeasonEntryRead])

@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -12,6 +12,7 @@ from app.utils.db_types import GUID
 if TYPE_CHECKING:
     from app.models.match_game import MatchGame
     from app.models.player import Player
+    from app.models.playoff_round import PlayoffRound
     from app.models.pokemon import MatchPokemon
     from app.models.season import Season
 
@@ -29,7 +30,23 @@ class MatchStage(str, enum.Enum):
 
 class Match(Base):
     __tablename__ = "matches"
-    __table_args__ = (CheckConstraint("home_player_id != away_player_id", name="ck_matches_distinct_players"),)
+    __table_args__ = (
+        CheckConstraint("home_player_id != away_player_id", name="ck_matches_distinct_players"),
+        CheckConstraint("bracket_order IS NULL OR bracket_order > 0", name="ck_matches_bracket_order_positive"),
+        # Two matches cannot occupy the same slot in the same round. Partial, so
+        # the many matches with no round (group stage) or no slot yet are not
+        # forced into a single-row uniqueness class. Both dialect keywords are
+        # given: without sqlite_where the tests would exercise a *different*
+        # index from production and prove nothing.
+        Index(
+            "uq_matches_playoff_round_bracket_order",
+            "playoff_round_id",
+            "bracket_order",
+            unique=True,
+            postgresql_where=text("playoff_round_id IS NOT NULL AND bracket_order IS NOT NULL"),
+            sqlite_where=text("playoff_round_id IS NOT NULL AND bracket_order IS NOT NULL"),
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     season_id: Mapped[uuid.UUID] = mapped_column(
@@ -68,13 +85,30 @@ class Match(Base):
         nullable=False,
         index=True,
     )
-    # Display name for the round, e.g. "Group A", "Semifinal", "Grand Final".
-    round_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
-    # Sort key for rounds within the playoff bracket (lower = earlier round).
-    # Left null for group-stage matches, which aren't organized into rounds.
-    round_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    # Sort key for a match's position within its round (e.g. bracket slot).
+    # Which playoff round this match belongs to. Null for group-stage matches,
+    # which are not organized into rounds. This - not round_label/round_order
+    # below - is the authority on where a playoff match appears.
+    playoff_round_id: Mapped[uuid.UUID | None] = mapped_column(
+        GUID(), ForeignKey("playoff_rounds.id"), nullable=True, index=True
+    )
+    # The match's position within its round; 1 is the first/top match. Unique
+    # within a round (see the partial index above).
     bracket_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # --- legacy, retained for rollback compatibility only ------------------
+    # Before playoff rounds were modelled as rows, every match carried its own
+    # copy of the round's name and position, which is what let matches in one
+    # conceptual round disagree about both. New code MUST NOT read these as the
+    # source of truth for playoff ordering - services.matches derives the
+    # round's name and position from `playoff_round` instead.
+    #
+    # They are still written for playoff matches so that rolling this release
+    # back to code that reads them renders the same bracket, and round_label is
+    # still the real per-match label for GROUP matches ("Group A",
+    # "Group - Matchday 1"), which have no round entity. A later, separately
+    # reviewed migration drops them once production has stabilized.
+    round_label: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    round_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -91,6 +125,9 @@ class Match(Base):
     home_player: Mapped["Player"] = relationship("Player", foreign_keys=[home_player_id], lazy="raise")
     away_player: Mapped["Player"] = relationship("Player", foreign_keys=[away_player_id], lazy="raise")
     winner: Mapped["Player | None"] = relationship("Player", foreign_keys=[winner_id], lazy="raise")
+    playoff_round: Mapped["PlayoffRound | None"] = relationship(
+        "PlayoffRound", back_populates="matches", lazy="raise"
+    )
 
     games: Mapped[list["MatchGame"]] = relationship(
         "MatchGame",

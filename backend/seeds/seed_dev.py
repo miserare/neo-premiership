@@ -20,6 +20,7 @@ from app.models.announcement import Announcement
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.match_game import MatchGame
 from app.models.player import Player
+from app.models.playoff_round import PlayoffRound
 from app.models.pokemon import SeasonRosterPokemon
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
@@ -59,7 +60,7 @@ def _match(
     stage: MatchStage,
     status: MatchStatus = MatchStatus.SCHEDULED,
     round_label: str | None = None,
-    round_order: int | None = None,
+    playoff_round: PlayoffRound | None = None,
     bracket_order: int | None = None,
     scheduled_at: datetime | None = None,
     completed_at: datetime | None = None,
@@ -76,8 +77,12 @@ def _match(
         winner_id=winner.id if winner else None,
         status=status,
         stage=stage,
-        round_label=round_label,
-        round_order=round_order,
+        # round_label is the group/matchday label for group matches; a playoff
+        # match takes its name from its round, and the legacy columns are only
+        # mirrored so a rollback still renders the bracket.
+        round_label=playoff_round.label if playoff_round is not None else round_label,
+        round_order=playoff_round.display_order if playoff_round is not None else None,
+        playoff_round_id=playoff_round.id if playoff_round is not None else None,
         bracket_order=bracket_order,
         scheduled_at=scheduled_at,
         completed_at=completed_at,
@@ -182,25 +187,32 @@ async def seed() -> None:
                 ]
             )
 
+            # Rounds are rows, and their order is the display_order below -
+            # never the labels, never the dates of the matches inside them.
+            semifinal = PlayoffRound(season_id=season1.id, label="Semifinal", display_order=1)
+            final_round = PlayoffRound(season_id=season1.id, label="Final", display_order=2)
+            db.add_all([semifinal, final_round])
+            await db.flush()
+
             playoffs_start = datetime(2025, 3, 1, tzinfo=timezone.utc)
             db.add_all(
                 [
                     _match(
                         season1, ash, may, stage=MatchStage.PLAYOFFS, status=MatchStatus.COMPLETED,
-                        round_label="Semifinal", round_order=1, bracket_order=1,
+                        playoff_round=semifinal, bracket_order=1,
                         completed_at=playoffs_start, home_score=2, away_score=1, winner=ash,
                         replay_url="https://replay.pokemonshowdown.com/gen9nationaldex-1000000007",
                         youtube_url="https://www.youtube.com/watch?v=neo-s1-semi-ash-may",
                     ),
                     _match(
                         season1, gary, misty, stage=MatchStage.PLAYOFFS, status=MatchStatus.COMPLETED,
-                        round_label="Semifinal", round_order=1, bracket_order=2,
+                        playoff_round=semifinal, bracket_order=2,
                         completed_at=playoffs_start + timedelta(days=1), home_score=2, away_score=0, winner=gary,
                         replay_url="https://replay.pokemonshowdown.com/gen9nationaldex-1000000008",
                     ),
                     _match(
                         season1, ash, gary, stage=MatchStage.PLAYOFFS, status=MatchStatus.COMPLETED,
-                        round_label="Final", round_order=2, bracket_order=1,
+                        playoff_round=final_round, bracket_order=1,
                         completed_at=datetime(2025, 4, 21, tzinfo=timezone.utc), home_score=2, away_score=1,
                         winner=ash,
                         replay_url="https://replay.pokemonshowdown.com/gen9nationaldex-1000000009",
@@ -340,7 +352,9 @@ async def _seed_playoff_series(db: AsyncSession) -> None:
     have a real example to render."""
     final = (
         await db.execute(
-            select(Match).where(Match.round_label == "Final", Match.stage == MatchStage.PLAYOFFS)
+            select(Match)
+            .join(PlayoffRound, PlayoffRound.id == Match.playoff_round_id)
+            .where(PlayoffRound.label == "Final", Match.stage == MatchStage.PLAYOFFS)
         )
     ).scalars().first()
     if final is None:

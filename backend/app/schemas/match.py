@@ -55,9 +55,14 @@ class MatchRead(BaseModel):
     winner_id: uuid.UUID | None
     status: MatchStatus
     stage: MatchStage
+    playoff_round_id: uuid.UUID | None
+    bracket_order: int | None
+    # Backward-compatible mirrors. For a playoff match both are derived from
+    # the referenced round, never from the legacy match columns; for a group
+    # match round_label is the match's own group/matchday label and there is
+    # no round order. See services.matches.to_match_read.
     round_label: str | None
     round_order: int | None
-    bracket_order: int | None
     scheduled_at: datetime | None
     completed_at: datetime | None
     home_score: int | None
@@ -76,9 +81,11 @@ class MatchCreate(BaseModel):
     away_player_id: uuid.UUID
     stage: MatchStage
     status: MatchStatus = MatchStatus.SCHEDULED
-    round_label: str | None = None
-    round_order: int | None = None
-    bracket_order: int | None = None
+    playoff_round_id: uuid.UUID | None = None
+    bracket_order: int | None = Field(default=None, gt=0)
+    # Group-stage label only ("Group A", "Group - Matchday 1"). A playoff
+    # match takes its label from its round and must not carry its own.
+    round_label: str | None = Field(default=None, max_length=64)
     scheduled_at: datetime | None = None
     completed_at: datetime | None = None
     home_score: int | None = None
@@ -91,6 +98,10 @@ class MatchCreate(BaseModel):
     def _validate(self) -> "MatchCreate":
         if self.home_player_id == self.away_player_id:
             raise ValueError("home_player_id and away_player_id must be different players")
+        if self.stage == MatchStage.GROUP and self.playoff_round_id is not None:
+            raise ValueError("a group-stage match must not reference a playoff round")
+        if self.stage == MatchStage.PLAYOFFS and self.round_label is not None:
+            raise ValueError("a playoff match takes its label from its round; set playoff_round_id instead")
         if self.winner_id is not None and self.winner_id not in (self.home_player_id, self.away_player_id):
             raise ValueError("winner_id must be the home or away player")
         if self.status == MatchStatus.COMPLETED and self.winner_id is None:
@@ -107,9 +118,11 @@ class MatchUpdate(BaseModel):
     recreate the match if they need to change."""
 
     status: MatchStatus | None = None
-    round_label: str | None = None
-    round_order: int | None = None
-    bracket_order: int | None = None
+    # Setting playoff_round_id moves the match between rounds; the router
+    # validates the move against the match's stage and season.
+    playoff_round_id: uuid.UUID | None = None
+    bracket_order: int | None = Field(default=None, gt=0)
+    round_label: str | None = Field(default=None, max_length=64)
     scheduled_at: datetime | None = None
     completed_at: datetime | None = None
     home_score: int | None = None

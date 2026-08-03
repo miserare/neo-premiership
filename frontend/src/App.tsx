@@ -5,6 +5,7 @@ import NavSearch from "./components/NavSearch";
 import AdminAccountPage from "./pages/AdminAccountPage";
 import AdminLayout from "./pages/AdminLayout";
 import AdminMatchesPage from "./pages/AdminMatchesPage";
+import AdminPlayoffRoundsPage from "./pages/AdminPlayoffRoundsPage";
 import AdminPlayersPage from "./pages/AdminPlayersPage";
 import AdminSeasonRosterPage from "./pages/AdminSeasonRosterPage";
 import AdminSeasonsPage from "./pages/AdminSeasonsPage";
@@ -52,6 +53,7 @@ export default function App() {
               <Route path="seasons" element={<AdminSeasonsPage />} />
               <Route path="seasons/:seasonId" element={<AdminSeasonRosterPage />} />
               <Route path="matches" element={<AdminMatchesPage />} />
+            <Route path="playoff-rounds" element={<AdminPlayoffRoundsPage />} />
               <Route path="site" element={<AdminSitePage />} />
               <Route path="account" element={<AdminAccountPage />} />
             </Route>

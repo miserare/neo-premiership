@@ -13,6 +13,8 @@ import type {
   PlayerCreateInput,
   PlayerDetail,
   PlayerUpdateInput,
+  PlayoffRound,
+  PlayoffRoundCreateInput,
   PokemonInput,
   RosterPokemonSetInput,
   SeasonCreateInput,
@@ -189,6 +191,29 @@ export const api = {
           method: "PUT",
           body: JSON.stringify(input),
         }),
+    },
+    playoffRounds: {
+      list: (seasonId: string): Promise<PlayoffRound[]> =>
+        request<PlayoffRound[]>(`/seasons/${seasonId}/playoff-rounds`),
+      create: (seasonId: string, input: PlayoffRoundCreateInput): Promise<PlayoffRound> =>
+        request<PlayoffRound>(`/seasons/${seasonId}/playoff-rounds`, {
+          method: "POST",
+          body: JSON.stringify(input),
+        }),
+      rename: (seasonId: string, roundId: string, label: string): Promise<PlayoffRound> =>
+        request<PlayoffRound>(`/seasons/${seasonId}/playoff-rounds/${roundId}`, {
+          method: "PATCH",
+          body: JSON.stringify({ label }),
+        }),
+      /** Whole-list reorder: the server rewrites contiguous positions in one
+       * transaction, so there is no half-applied ordering to recover from. */
+      reorder: (seasonId: string, roundIds: string[]): Promise<PlayoffRound[]> =>
+        request<PlayoffRound[]>(`/seasons/${seasonId}/playoff-rounds/reorder`, {
+          method: "PUT",
+          body: JSON.stringify({ round_ids: roundIds }),
+        }),
+      remove: (seasonId: string, roundId: string): Promise<void> =>
+        request<void>(`/seasons/${seasonId}/playoff-rounds/${roundId}`, { method: "DELETE" }),
     },
   },
   matches: {

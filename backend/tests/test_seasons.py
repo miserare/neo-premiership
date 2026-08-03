@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.player import Player
+from app.models.playoff_round import PlayoffRound
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
 from tests.conftest import ADMIN_HEADERS
@@ -151,22 +152,27 @@ async def test_playoff_bracket_ordering(client: AsyncClient, db_session: AsyncSe
     db_session.add_all([season, p1, p2, p3, p4])
     await db_session.flush()
 
+    semifinal = PlayoffRound(season_id=season.id, label="Semifinal", display_order=1)
+    final = PlayoffRound(season_id=season.id, label="Final", display_order=2)
+    db_session.add_all([semifinal, final])
+    await db_session.flush()
+
     db_session.add_all(
         [
             Match(
                 season_id=season.id, home_player_id=p1.id, away_player_id=p2.id, winner_id=p1.id,
                 status=MatchStatus.COMPLETED, stage=MatchStage.PLAYOFFS,
-                round_label="Final", round_order=2, bracket_order=1,
+                playoff_round_id=final.id, bracket_order=1,
             ),
             Match(
                 season_id=season.id, home_player_id=p3.id, away_player_id=p4.id, winner_id=p4.id,
                 status=MatchStatus.COMPLETED, stage=MatchStage.PLAYOFFS,
-                round_label="Semifinal", round_order=1, bracket_order=2,
+                playoff_round_id=semifinal.id, bracket_order=2,
             ),
             Match(
                 season_id=season.id, home_player_id=p1.id, away_player_id=p3.id, winner_id=p1.id,
                 status=MatchStatus.COMPLETED, stage=MatchStage.PLAYOFFS,
-                round_label="Semifinal", round_order=1, bracket_order=1,
+                playoff_round_id=semifinal.id, bracket_order=1,
             ),
         ]
     )
@@ -176,6 +182,10 @@ async def test_playoff_bracket_ordering(client: AsyncClient, db_session: AsyncSe
 
     assert response.status_code == 200
     bracket = response.json()["bracket"]
+    assert [r["label"] for r in bracket] == ["Semifinal", "Final"]
+    assert [r["display_order"] for r in bracket] == [1, 2]
+    # Legacy mirrors on the response are derived from the round, not from the
+    # match's own columns.
     assert [r["round_label"] for r in bracket] == ["Semifinal", "Final"]
     semifinal_matches = bracket[0]["matches"]
     assert [m["home_player"]["username"] for m in semifinal_matches] == ["BracketP1", "BracketP3"]

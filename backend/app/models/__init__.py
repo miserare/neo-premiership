@@ -4,6 +4,7 @@ from app.models.elo import EloRatingEvent
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.match_game import MatchGame
 from app.models.player import Player
+from app.models.playoff_round import PlayoffRound
 from app.models.pokemon import MatchPokemon, SeasonRosterPokemon
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
@@ -21,6 +22,7 @@ __all__ = [
     "MatchStage",
     "MatchStatus",
     "Player",
+    "PlayoffRound",
     "Season",
     "SeasonEntry",
     "SeasonRosterPokemon",

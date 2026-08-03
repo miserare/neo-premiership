@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models.match import Match
+from app.models.playoff_round import PlayoffRound
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
 from app.schemas.season import SeasonCreate, SeasonUpdate
@@ -84,7 +85,10 @@ async def delete_season(db: AsyncSession, season: Season) -> None:
     # Explicit child deletes rather than relying on the DB's ON DELETE CASCADE -
     # SQLite (used in tests) doesn't enforce foreign keys unless a per-connection
     # pragma is set, so the cascade can't be relied on there.
+    # Matches before rounds: a match references its round, so removing the
+    # rounds first would violate the foreign key.
     await db.execute(delete(Match).where(Match.season_id == season.id))
+    await db.execute(delete(PlayoffRound).where(PlayoffRound.season_id == season.id))
     await db.execute(delete(SeasonEntry).where(SeasonEntry.season_id == season.id))
     await db.delete(season)
     await db.commit()

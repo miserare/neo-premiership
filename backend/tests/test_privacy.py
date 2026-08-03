@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.player import Player
+from app.models.playoff_round import PlayoffRound
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
 from tests.conftest import ADMIN_HEADERS
@@ -31,6 +32,10 @@ async def _league_with_private_data(db_session: AsyncSession) -> tuple[Player, S
     await db_session.flush()
 
     season.champion_id = home.id
+    final = PlayoffRound(season_id=season.id, label="Final", display_order=1)
+    db_session.add(final)
+    await db_session.flush()
+
     db_session.add_all(
         [
             SeasonEntry(season_id=season.id, player_id=home.id, group_label="A"),
@@ -50,8 +55,8 @@ async def _league_with_private_data(db_session: AsyncSession) -> tuple[Player, S
                 winner_id=home.id,
                 status=MatchStatus.COMPLETED,
                 stage=MatchStage.PLAYOFFS,
-                round_label="Final",
-                round_order=1,
+                playoff_round_id=final.id,
+                bracket_order=1,
             ),
         ]
     )

@@ -78,6 +78,16 @@ class StandingsGroup(BaseModel):
 
 
 class BracketRound(BaseModel):
+    """One column of the public bracket.
+
+    The array order is the presentation order; clients render columns exactly
+    as they arrive and must not re-sort. `round_label`/`round_order` are kept
+    for older clients and are just mirrors of `label`/`display_order`.
+    """
+
+    id: uuid.UUID
+    label: str
+    display_order: int
     round_label: str
     round_order: int
     matches: list[MatchRead]
