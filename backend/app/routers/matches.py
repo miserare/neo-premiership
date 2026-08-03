@@ -73,6 +73,7 @@ async def update_match(match_id: uuid.UUID, match_in: MatchUpdate, db: AsyncSess
     # completed must still see a winner_id that was set in an earlier request.
     winner_id = match_in.winner_id if "winner_id" in match_in.model_fields_set else match.winner_id
     new_status = match_in.status if "status" in match_in.model_fields_set else match.status
+    completed_at = match_in.completed_at if "completed_at" in match_in.model_fields_set else match.completed_at
 
     if winner_id is not None and winner_id not in (match.home_player_id, match.away_player_id):
         raise HTTPException(
@@ -81,6 +82,11 @@ async def update_match(match_id: uuid.UUID, match_in: MatchUpdate, db: AsyncSess
     if new_status == MatchStatus.COMPLETED and winner_id is None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="a completed match requires a winner_id"
+        )
+    if new_status == MatchStatus.COMPLETED and completed_at is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="a completed match requires completed_at for Elo ordering",
         )
 
     updated = await crud.update_match(db, match, match_in)

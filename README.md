@@ -194,6 +194,13 @@ docker-compose.prod.yml   Production
   and adding it to the other. Match-team choices are evaluated at the match's
   completed time (or scheduled time when not completed); undated legacy matches
   can use any Pokémon that player rostered during the season.
+- **Elo is chronological and automatic.** A completed match must have a winner
+  and timezone-aware completion timestamp. Saving, correcting, cancelling, or
+  deleting a result rebuilds every rating in timestamp order using `K = 64`.
+  Each player keeps a dated, per-match ledger; their current Elo is a derived
+  cache, while the administrator edits only their starting Elo. Matches with
+  the exact same completion timestamp use their stable match ID as a
+  deterministic tie-breaker.
 
 ## Credits and licence
 

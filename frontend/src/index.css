@@ -359,6 +359,10 @@ table,
   font-size: 0.9rem;
 }
 
+.table-scroll {
+  overflow-x: auto;
+}
+
 .players-table th,
 .standings-table th {
   text-align: left;

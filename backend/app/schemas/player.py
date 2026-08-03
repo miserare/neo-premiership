@@ -26,14 +26,14 @@ class PlayerCreate(BaseModel):
     username: str = Field(..., min_length=2, max_length=32, description="Unique in-league display name")
     discord_id: str | None = Field(default=None, max_length=32)
     is_active: bool = True
-    elo_rating: int | None = Field(default=None, ge=0)
+    initial_elo_rating: int | None = Field(default=None, ge=-10_000, le=10_000)
 
 
 class PlayerUpdate(BaseModel):
     username: str | None = Field(default=None, min_length=2, max_length=32)
     discord_id: str | None = None
     is_active: bool | None = None
-    elo_rating: int | None = Field(default=None, ge=0)
+    initial_elo_rating: int | None = Field(default=None, ge=-10_000, le=10_000)
 
 
 # -------------------------------------------------------------- public models
@@ -82,6 +82,18 @@ class PlayerSeasonRecord(BaseModel):
     former_pokemon: list[SeasonRosterPokemonRead] = []
 
 
+class EloRatingHistoryEntry(BaseModel):
+    match_id: uuid.UUID
+    opponent_id: uuid.UUID
+    opponent_username: str
+    occurred_at: datetime
+    result: int
+    expected_score: float
+    rating_before: int
+    rating_after: int
+    rating_change: int
+
+
 class PlayerDetail(BaseModel):
     """Public player profile. Deliberately has no discord_id field."""
 
@@ -90,6 +102,7 @@ class PlayerDetail(BaseModel):
     join_date: datetime
     is_active: bool
     elo_rating: int
+    elo_history: list[EloRatingHistoryEntry]
     most_recent_season_record: PlayerSeasonRecord | None
     historical_record: PlayerRecord
     season_records: list[PlayerSeasonRecord]
@@ -107,3 +120,4 @@ class PlayerAdmin(PlayerPublic):
     """
 
     discord_id: str | None = None
+    initial_elo_rating: int

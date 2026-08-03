@@ -472,7 +472,11 @@ function MatchEditor({
             type="datetime-local"
             value={completedAt}
             onChange={(event) => setCompletedAt(event.target.value)}
+            required={status === "completed"}
           />
+          <p className="admin-form__hint">
+            Required for completed matches; this timestamp determines Elo calculation order.
+          </p>
         </div>
         <div className="admin-form__row">
           <label htmlFor={`hs-${match.id}`}>

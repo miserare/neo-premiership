@@ -8,17 +8,23 @@ interface PlayerFormState {
   username: string;
   discord_id: string;
   is_active: boolean;
-  elo_rating: string;
+  initial_elo_rating: string;
 }
 
-const EMPTY_FORM: PlayerFormState = { username: "", discord_id: "", is_active: true, elo_rating: "" };
+const EMPTY_FORM: PlayerFormState = {
+  username: "",
+  discord_id: "",
+  is_active: true,
+  initial_elo_rating: "",
+};
 
 function toPlayerInput(form: PlayerFormState) {
   return {
     username: form.username.trim(),
     discord_id: form.discord_id.trim() || null,
     is_active: form.is_active,
-    elo_rating: form.elo_rating.trim() === "" ? null : Number(form.elo_rating),
+    initial_elo_rating:
+      form.initial_elo_rating.trim() === "" ? null : Number(form.initial_elo_rating),
   };
 }
 
@@ -56,7 +62,7 @@ export default function AdminPlayersPage() {
       username: player.username,
       discord_id: player.discord_id ?? "",
       is_active: player.is_active,
-      elo_rating: String(player.elo_rating),
+      initial_elo_rating: String(player.initial_elo_rating),
     });
   }
 
@@ -114,15 +120,21 @@ export default function AdminPlayersPage() {
             />
           </div>
           <div className="admin-form__row">
-            <label htmlFor="create-elo">Elo rating</label>
+            <label htmlFor="create-elo">Starting Elo</label>
             <input
               id="create-elo"
               type="number"
-              min={0}
-              value={createForm.elo_rating}
-              onChange={(event) => setCreateForm({ ...createForm, elo_rating: event.target.value })}
+              min={-10000}
+              max={10000}
+              value={createForm.initial_elo_rating}
+              onChange={(event) =>
+                setCreateForm({ ...createForm, initial_elo_rating: event.target.value })
+              }
               placeholder="1000"
             />
+            <p className="admin-form__hint">
+              Current Elo is calculated automatically from dated completed matches.
+            </p>
           </div>
           <div className="admin-form__row admin-form__row--checkbox">
             <label htmlFor="create-active">
@@ -166,7 +178,8 @@ export default function AdminPlayersPage() {
               <tr>
                 <th>Username</th>
                 <th>Discord ID</th>
-                <th>Elo</th>
+                <th>Starting Elo</th>
+                <th>Current Elo</th>
                 <th>Active</th>
                 <th></th>
               </tr>
@@ -175,7 +188,7 @@ export default function AdminPlayersPage() {
               {players.map((player) =>
                 editingId === player.id ? (
                   <tr key={player.id}>
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <form className="admin-form admin-form--inline" onSubmit={handleSaveEdit}>
                         <input
                           aria-label="Username"
@@ -192,11 +205,14 @@ export default function AdminPlayersPage() {
                           maxLength={32}
                         />
                         <input
-                          aria-label="Elo rating"
+                          aria-label="Starting Elo"
                           type="number"
-                          min={0}
-                          value={editForm.elo_rating}
-                          onChange={(event) => setEditForm({ ...editForm, elo_rating: event.target.value })}
+                          min={-10000}
+                          max={10000}
+                          value={editForm.initial_elo_rating}
+                          onChange={(event) =>
+                            setEditForm({ ...editForm, initial_elo_rating: event.target.value })
+                          }
                         />
                         <label>
                           <input
@@ -222,6 +238,7 @@ export default function AdminPlayersPage() {
                   <tr key={player.id}>
                     <td>{player.username}</td>
                     <td>{player.discord_id ?? "-"}</td>
+                    <td>{player.initial_elo_rating}</td>
                     <td>{player.elo_rating}</td>
                     <td>
                       <span className={player.is_active ? "badge badge--active" : "badge badge--inactive"}>

@@ -95,6 +95,10 @@ class MatchCreate(BaseModel):
             raise ValueError("winner_id must be the home or away player")
         if self.status == MatchStatus.COMPLETED and self.winner_id is None:
             raise ValueError("a completed match requires a winner_id")
+        if self.status == MatchStatus.COMPLETED and self.completed_at is None:
+            raise ValueError("a completed match requires completed_at for Elo ordering")
+        if self.completed_at is not None and self.completed_at.utcoffset() is None:
+            raise ValueError("completed_at must include a timezone")
         return self
 
 
@@ -113,3 +117,9 @@ class MatchUpdate(BaseModel):
     winner_id: uuid.UUID | None = None
     replay_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
+
+    @model_validator(mode="after")
+    def _validate_timestamps(self) -> "MatchUpdate":
+        if self.completed_at is not None and self.completed_at.utcoffset() is None:
+            raise ValueError("completed_at must include a timezone")
+        return self

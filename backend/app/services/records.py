@@ -1,9 +1,10 @@
 import uuid
 
+from app.models.elo import EloRatingEvent
 from app.models.match import Match, MatchStatus
 from app.models.player import Player
 from app.models.season_entry import SeasonEntry
-from app.schemas.player import PlayerDetail, PlayerRecord, PlayerSeasonRecord
+from app.schemas.player import EloRatingHistoryEntry, PlayerDetail, PlayerRecord, PlayerSeasonRecord
 from app.schemas.pokemon import SeasonRosterPokemonRead
 from app.services.matches import MAX_DT, match_recency, to_match_read
 
@@ -14,7 +15,12 @@ def _record_from_matches(player_id: uuid.UUID, matches: list[Match]) -> PlayerRe
     return PlayerRecord(wins=wins, losses=losses)
 
 
-def build_player_detail(player: Player, matches: list[Match], season_entries: list[SeasonEntry]) -> PlayerDetail:
+def build_player_detail(
+    player: Player,
+    matches: list[Match],
+    season_entries: list[SeasonEntry],
+    elo_history: list[EloRatingEvent],
+) -> PlayerDetail:
     # A completed match only counts toward a record once it has a valid winner.
     completed = [m for m in matches if m.status == MatchStatus.COMPLETED and m.winner_id is not None]
     backlog = [m for m in matches if m.status == MatchStatus.SCHEDULED]
@@ -46,6 +52,20 @@ def build_player_detail(player: Player, matches: list[Match], season_entries: li
         join_date=player.join_date,
         is_active=player.is_active,
         elo_rating=player.elo_rating,
+        elo_history=[
+            EloRatingHistoryEntry(
+                match_id=event.match_id,
+                opponent_id=event.opponent_id,
+                opponent_username=event.opponent.username,
+                occurred_at=event.occurred_at,
+                result=event.result,
+                expected_score=float(event.expected_score),
+                rating_before=event.rating_before,
+                rating_after=event.rating_after,
+                rating_change=event.rating_change,
+            )
+            for event in elo_history
+        ],
         most_recent_season_record=season_records[0] if season_records else None,
         historical_record=_record_from_matches(player.id, completed),
         season_records=season_records,

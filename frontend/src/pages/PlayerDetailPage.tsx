@@ -128,6 +128,42 @@ export default function PlayerDetailPage() {
         </div>
       </dl>
 
+      <section aria-labelledby="elo-history-heading">
+        <h2 id="elo-history-heading">Elo History</h2>
+        {player.elo_history.length > 0 ? (
+          <div className="table-scroll">
+            <table className="players-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Opponent</th>
+                  <th>Result</th>
+                  <th>Before</th>
+                  <th>Change</th>
+                  <th>After</th>
+                </tr>
+              </thead>
+              <tbody>
+                {player.elo_history.map((entry) => (
+                  <tr key={entry.match_id}>
+                    <td>{formatDateTime(entry.occurred_at)}</td>
+                    <td>
+                      <Link to={`/players/${entry.opponent_id}`}>{entry.opponent_username}</Link>
+                    </td>
+                    <td>{entry.result === 1 ? "Win" : "Loss"}</td>
+                    <td>{entry.rating_before}</td>
+                    <td>{entry.rating_change > 0 ? `+${entry.rating_change}` : entry.rating_change}</td>
+                    <td>{entry.rating_after}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ) : (
+          <p>No Elo-rated matches yet.</p>
+        )}
+      </section>
+
       {player.season_records.length > 0 && (
         <section aria-labelledby="season-history-heading">
           <h2 id="season-history-heading">Season History</h2>

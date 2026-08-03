@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match
 from app.models.match_game import MatchGame
-from app.models.player import Player
+from app.models.player import DEFAULT_ELO_RATING, Player
 from app.models.pokemon import MatchPokemon
 from app.models.season import Season
 from app.schemas.player import PlayerCreate, PlayerUpdate
+from app.services.elo import recalculate_elo_ratings
 
 # Reserved for the tombstone player that inherits a deleted player's matches.
 PLACEHOLDER_USERNAME = "Deleted Player"
@@ -16,11 +17,10 @@ PLACEHOLDER_USERNAME = "Deleted Player"
 
 async def create_player(db: AsyncSession, player_in: PlayerCreate) -> Player:
     data = player_in.model_dump()
-    # elo_rating is optional on input; omit rather than pass None so the
-    # model's own NOT NULL default (1000) applies.
-    if data.get("elo_rating") is None:
-        data.pop("elo_rating", None)
-    player = Player(**data)
+    initial_rating = data.pop("initial_elo_rating", None)
+    if initial_rating is None:
+        initial_rating = DEFAULT_ELO_RATING
+    player = Player(initial_elo_rating=initial_rating, elo_rating=initial_rating, **data)
     db.add(player)
     await db.commit()
     await db.refresh(player)
@@ -51,10 +51,13 @@ async def get_player_by_username(db: AsyncSession, username: str) -> Player | No
 
 async def update_player(db: AsyncSession, player: Player, player_in: PlayerUpdate) -> Player:
     data = player_in.model_dump(exclude_unset=True)
-    if data.get("elo_rating") is None:
-        data.pop("elo_rating", None)
+    initial_rating = data.pop("initial_elo_rating", None)
     for field, value in data.items():
         setattr(player, field, value)
+    if initial_rating is not None:
+        player.initial_elo_rating = initial_rating
+        await db.flush()
+        await recalculate_elo_ratings(db)
     await db.commit()
     await db.refresh(player)
     return player
@@ -128,4 +131,6 @@ async def delete_player(db: AsyncSession, player: Player) -> None:
     # Their season roster entries (and drafted pools) still cascade away - the
     # roster is a record of who played that season, which they no longer did.
     await db.delete(player)
+    await db.flush()
+    await recalculate_elo_ratings(db)
     await db.commit()

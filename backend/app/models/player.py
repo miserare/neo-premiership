@@ -25,6 +25,9 @@ class Player(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    # The immutable starting point for chronological Elo calculation. The
+    # current rating below is a derived cache rebuilt from completed matches.
+    initial_elo_rating: Mapped[int] = mapped_column(Integer, default=DEFAULT_ELO_RATING, nullable=False)
     elo_rating: Mapped[int] = mapped_column(Integer, default=DEFAULT_ELO_RATING, nullable=False)
     # Marks the single tombstone player that a deleted player's matches are
     # reassigned to, so match history survives the deletion. Excluded from

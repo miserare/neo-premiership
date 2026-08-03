@@ -16,6 +16,7 @@ from app.schemas.player import (
     PlayerUpdate,
 )
 from app.services.records import build_player_detail
+from app.services.elo import get_player_elo_history
 
 router = APIRouter(prefix="/players", tags=["players"])
 
@@ -58,7 +59,8 @@ async def get_player(player_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
     matches = await match_crud.get_matches_for_player(db, player_id)
     season_entries = await season_entry_crud.get_player_season_entries(db, player_id)
-    return build_player_detail(player, matches, season_entries)
+    elo_history = await get_player_elo_history(db, player_id)
+    return build_player_detail(player, matches, season_entries, elo_history)
 
 
 # ------------------------------------------------------------ administrator

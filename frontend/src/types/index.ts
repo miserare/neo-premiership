@@ -21,6 +21,7 @@ export interface Player {
 // Only returned from routes guarded by an administrator session.
 export interface PlayerAdmin extends Player {
   discord_id: string | null;
+  initial_elo_rating: number;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerCreate
@@ -28,7 +29,7 @@ export interface PlayerCreateInput {
   username: string;
   discord_id?: string | null;
   is_active?: boolean;
-  elo_rating?: number | null;
+  initial_elo_rating?: number | null;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerUpdate
@@ -36,7 +37,7 @@ export interface PlayerUpdateInput {
   username?: string;
   discord_id?: string | null;
   is_active?: boolean;
-  elo_rating?: number | null;
+  initial_elo_rating?: number | null;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerSummary
@@ -61,6 +62,19 @@ export interface PlayerSeasonRecord {
   losses: number;
   pokemon: SeasonRosterPokemon[];
   former_pokemon: SeasonRosterPokemon[];
+}
+
+// Mirrors backend/app/schemas/player.py::EloRatingHistoryEntry
+export interface EloRatingHistoryEntry {
+  match_id: string;
+  opponent_id: string;
+  opponent_username: string;
+  occurred_at: string;
+  result: 0 | 1;
+  expected_score: number;
+  rating_before: number;
+  rating_after: number;
+  rating_change: number;
 }
 
 // Mirrors backend/app/models/match.py::MatchStatus
@@ -184,6 +198,7 @@ export interface PlayerDetail {
   join_date: string;
   is_active: boolean;
   elo_rating: number;
+  elo_history: EloRatingHistoryEntry[];
   most_recent_season_record: PlayerSeasonRecord | null;
   historical_record: PlayerRecord;
   season_records: PlayerSeasonRecord[];

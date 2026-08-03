@@ -1,5 +1,6 @@
 from app.models.admin import AdminSession, AdminUser, LoginAttempt
 from app.models.announcement import Announcement
+from app.models.elo import EloRatingEvent
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.match_game import MatchGame
 from app.models.player import Player
@@ -12,6 +13,7 @@ __all__ = [
     "AdminSession",
     "AdminUser",
     "Announcement",
+    "EloRatingEvent",
     "LoginAttempt",
     "Match",
     "MatchGame",

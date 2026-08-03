@@ -6,6 +6,7 @@ from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.match import Match, MatchStage
 from app.schemas.match import MatchCreate, MatchUpdate
+from app.services.elo import recalculate_elo_ratings
 from app.utils.serialization import stringify_urls
 
 _URL_FIELDS = ("replay_url", "youtube_url")
@@ -71,6 +72,8 @@ async def create_match(db: AsyncSession, match_in: MatchCreate) -> Match:
     data = stringify_urls(match_in.model_dump(), _URL_FIELDS)
     match = Match(**data)
     db.add(match)
+    await db.flush()
+    await recalculate_elo_ratings(db)
     await db.commit()
     loaded = await get_match_by_id(db, match.id)
     assert loaded is not None
@@ -81,6 +84,8 @@ async def update_match(db: AsyncSession, match: Match, match_in: MatchUpdate) ->
     data = stringify_urls(match_in.model_dump(exclude_unset=True), _URL_FIELDS)
     for field, value in data.items():
         setattr(match, field, value)
+    await db.flush()
+    await recalculate_elo_ratings(db)
     await db.commit()
     loaded = await get_match_by_id(db, match.id)
     assert loaded is not None
@@ -89,4 +94,6 @@ async def update_match(db: AsyncSession, match: Match, match_in: MatchUpdate) ->
 
 async def delete_match(db: AsyncSession, match: Match) -> None:
     await db.delete(match)
+    await db.flush()
+    await recalculate_elo_ratings(db)
     await db.commit()

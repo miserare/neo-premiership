@@ -16,6 +16,7 @@ async def test_create_player(client: AsyncClient) -> None:
     assert "id" in data
     assert "join_date" in data
     assert data["elo_rating"] == 1000
+    assert data["initial_elo_rating"] == 1000
 
 
 async def test_create_player_requires_admin_token(client: AsyncClient) -> None:
@@ -91,15 +92,21 @@ async def test_get_player_detail_empty_history(client: AsyncClient) -> None:
     assert data["season_records"] == []
     assert data["backlog"] == []
     assert data["completed_matches"] == []
+    assert data["elo_history"] == []
 
 
-async def test_update_player_elo_rating(client: AsyncClient) -> None:
+async def test_update_player_starting_elo_rating(client: AsyncClient) -> None:
     create = await client.post("/api/players", json={"username": "EloTrainer"}, headers=ADMIN_HEADERS)
     player_id = create.json()["id"]
 
-    response = await client.patch(f"/api/players/{player_id}", json={"elo_rating": 1234}, headers=ADMIN_HEADERS)
+    response = await client.patch(
+        f"/api/players/{player_id}",
+        json={"initial_elo_rating": 1234},
+        headers=ADMIN_HEADERS,
+    )
 
     assert response.status_code == 200
+    assert response.json()["initial_elo_rating"] == 1234
     assert response.json()["elo_rating"] == 1234
 
 
