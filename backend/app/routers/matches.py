@@ -208,7 +208,15 @@ async def set_match_team(
     pokemon_in: MatchPokemonSet,
     db: AsyncSession = Depends(get_db),
 ) -> MatchRead:
-    """Replace one brought-team snapshot, validating ownership at match time."""
+    """Replace what one player brought to one match.
+
+    The snapshot records what was actually played, and is deliberately not
+    checked against the roster. A player may be recorded as bringing a Pokémon
+    they never drafted and never traded for, or one they had already traded
+    away - leagues run substitutions, corrections and one-off rulings, and the
+    match record has to be able to say what happened rather than what the
+    roster implies should have happened.
+    """
     match = await _get_match_or_404(db, match_id)
     if player_id not in (match.home_player_id, match.away_player_id):
         raise HTTPException(
@@ -222,37 +230,6 @@ async def set_match_team(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail="the same Pokémon cannot appear twice on one match team",
         )
-
-    played_at = match.completed_at or match.scheduled_at
-    history = await pokemon_crud.get_eligible_roster_pokemon(
-        db, match.season_id, player_id, played_at=None
-    )
-    if history:
-        eligible = (
-            history
-            if played_at is None
-            else await pokemon_crud.get_eligible_roster_pokemon(
-                db, match.season_id, player_id, played_at=played_at
-            )
-        )
-        # An already-recorded snapshot remains valid even if incomplete legacy
-        # ownership data does not cover it. This prevents an unrelated edit
-        # from erasing historical truth.
-        existing_ids = await pokemon_crud.get_match_team_ids(db, match_id, player_id)
-        allowed_ids = {pokemon.pokeapi_id for pokemon in eligible} | existing_ids
-        invalid = [
-            pokemon.species_name
-            for pokemon in pokemon_in.pokemon
-            if pokemon.pokeapi_id not in allowed_ids
-        ]
-        if invalid:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail=(
-                    "not owned by this player at the match time: "
-                    + ", ".join(invalid)
-                ),
-            )
 
     await pokemon_crud.replace_match_team(db, match_id, player_id, pokemon_in)
     refreshed = await _get_match_or_404(db, match_id, refresh=True)

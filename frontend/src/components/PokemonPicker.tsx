@@ -21,19 +21,11 @@ function loadSpecies(): Promise<Species[]> {
 interface PokemonPickerProps {
   value: PokemonInput[];
   onChange: (next: PokemonInput[]) => void;
-  /** Restrict choices to a player's drafted pool (used for match teams). */
-  allowedFrom?: PokemonInput[];
   max?: number;
   label: string;
 }
 
-export default function PokemonPicker({
-  value,
-  onChange,
-  allowedFrom,
-  max = 12,
-  label,
-}: PokemonPickerProps) {
+export default function PokemonPicker({ value, onChange, max = 12, label }: PokemonPickerProps) {
   const [species, setSpecies] = useState<Species[]>([]);
   const [query, setQuery] = useState("");
 
@@ -47,21 +39,16 @@ export default function PokemonPicker({
     };
   }, []);
 
-  const options: Species[] = useMemo(() => {
-    if (allowedFrom) {
-      return allowedFrom.map((p) => ({ id: p.pokeapi_id, name: p.species_name }));
-    }
-    return species;
-  }, [allowedFrom, species]);
-
   const chosenIds = new Set(value.map((p) => p.pokeapi_id));
   const matches = useMemo(() => {
-    const pool = options.filter((s) => !chosenIds.has(s.id));
+    const pool = species.filter((s) => !chosenIds.has(s.id));
     // Every whitespace-separated word must appear somewhere in the name, in any
     // order. With forms in the catalogue a name looks like "Charizard (Mega X)",
     // so a plain substring match would miss "mega charizard".
     const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    if (terms.length === 0) return allowedFrom ? pool : pool.slice(0, 0);
+    // The catalogue is the full species list, so an empty query offers nothing
+    // rather than a thousand rows; the admin types to narrow it.
+    if (terms.length === 0) return pool.slice(0, 0);
     return pool
       .filter((s) => {
         const name = s.name.toLowerCase();
@@ -70,7 +57,7 @@ export default function PokemonPicker({
       .slice(0, 12);
     // chosenIds is derived from `value`, which is already a dependency.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [options, query, value, allowedFrom]);
+  }, [species, query, value]);
 
   function add(entry: Species) {
     if (value.length >= max) return;
@@ -111,11 +98,7 @@ export default function PokemonPicker({
           <input
             type="search"
             className="pokemon-picker__search"
-            placeholder={
-              allowedFrom
-                ? "Filter this player's pool..."
-                : "Find a Pokémon - try \"mega charizard\" or \"galarian\""
-            }
+            placeholder={"Find a Pokémon - try \"mega charizard\" or \"galarian\""}
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             aria-label={`Search Pokémon to add to ${label}`}
@@ -131,11 +114,6 @@ export default function PokemonPicker({
                 </li>
               ))}
             </ul>
-          )}
-          {allowedFrom && allowedFrom.length === 0 && (
-            <p className="pokemon-picker__hint">
-              This player has no drafted Pokémon for this season yet.
-            </p>
           )}
         </>
       )}

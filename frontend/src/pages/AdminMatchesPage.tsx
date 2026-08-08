@@ -11,7 +11,6 @@ import type {
   PlayoffRound,
   PokemonInput,
   SeasonEntryRead,
-  SeasonRosterPokemon,
   SeasonSummary,
 } from "../types";
 
@@ -70,7 +69,7 @@ export default function AdminMatchesPage() {
     () => (seasonId ? api.matches.listBySeason(seasonId) : Promise.resolve([])),
     [seasonId],
   );
-  const { data: roster, refetch: refetchRoster } = useAsync<SeasonEntryRead[]>(
+  const { data: roster } = useAsync<SeasonEntryRead[]>(
     () => (seasonId ? api.seasons.roster.list(seasonId) : Promise.resolve([])),
     [seasonId],
   );
@@ -87,11 +86,6 @@ export default function AdminMatchesPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const rosterPlayers = (roster ?? []).map((entry) => entry.player);
-
-  function rosterHistoryFor(playerId: string): SeasonRosterPokemon[] {
-    const entry = (roster ?? []).find((e) => e.player.id === playerId);
-    return [...(entry?.pokemon ?? []), ...(entry?.former_pokemon ?? [])];
-  }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -361,11 +355,8 @@ export default function AdminMatchesPage() {
                   <MatchEditor
                     match={match}
                     playoffRounds={rounds}
-                    homeRosterHistory={rosterHistoryFor(match.home_player.id)}
-                    awayRosterHistory={rosterHistoryFor(match.away_player.id)}
                     onSaved={() => {
                       refetch();
-                      refetchRoster();
                       refetchRounds();
                     }}
                   />
@@ -382,42 +373,13 @@ export default function AdminMatchesPage() {
 interface MatchEditorProps {
   match: MatchRead;
   playoffRounds: PlayoffRound[];
-  homeRosterHistory: SeasonRosterPokemon[];
-  awayRosterHistory: SeasonRosterPokemon[];
   onSaved: () => void;
 }
 
-function eligibleTeamOptions(
-  history: SeasonRosterPokemon[],
-  matchAt: string | null,
-  recorded: PokemonInput[],
-): PokemonInput[] {
-  const at = matchAt ? new Date(matchAt).getTime() : null;
-  const eligible = history.filter((pokemon) => {
-    if (at === null) return true;
-    const acquired = pokemon.acquired_at ? new Date(pokemon.acquired_at).getTime() : Number.NEGATIVE_INFINITY;
-    const released = pokemon.released_at ? new Date(pokemon.released_at).getTime() : Number.POSITIVE_INFINITY;
-    return acquired <= at && at < released;
-  });
-  const byId = new Map<number, PokemonInput>();
-  for (const pokemon of eligible) {
-    byId.set(pokemon.pokeapi_id, {
-      pokeapi_id: pokemon.pokeapi_id,
-      species_name: pokemon.species_name,
-    });
-  }
-  // A previously recorded match snapshot remains editable even if old roster
-  // records are incomplete. Removing it from the picker must never erase it
-  // from the set of available historical choices.
-  for (const pokemon of recorded) byId.set(pokemon.pokeapi_id, pokemon);
-  return [...byId.values()];
-}
 
 function MatchEditor({
   match,
   playoffRounds,
-  homeRosterHistory,
-  awayRosterHistory,
   onSaved,
 }: MatchEditorProps) {
   const isPlayoff = match.stage === "playoffs";
@@ -455,9 +417,6 @@ function MatchEditor({
   );
   const [teamError, setTeamError] = useState<string | null>(null);
   const [teamSaved, setTeamSaved] = useState(false);
-  const matchAt = fromLocalInput(completedAt) ?? fromLocalInput(scheduledAt);
-  const homePool = eligibleTeamOptions(homeRosterHistory, matchAt, homeTeam);
-  const awayPool = eligibleTeamOptions(awayRosterHistory, matchAt, awayTeam);
 
   async function saveDetails(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -724,22 +683,21 @@ function MatchEditor({
       <div className="admin-form">
         <h3>Teams brought</h3>
         <p className="admin-form__hint">
-          Choices follow each player&apos;s ownership at the match date. Pokémon dropped or
-          traded later remain available for older matches, and saved match teams are permanent
-          historical snapshots.
+          Any Pokémon can be recorded here, whether or not the roster says the player owned
+          it at the time. This is a record of what was actually brought, so substitutions,
+          corrections and one-off rulings can be entered as they happened. Saved match teams
+          are permanent snapshots and are never changed by a later draft or trade.
         </p>
         <PokemonPicker
           label={`${match.home_player.username} brought`}
           value={homeTeam}
           onChange={setHomeTeam}
-          allowedFrom={homePool}
           max={6}
         />
         <PokemonPicker
           label={`${match.away_player.username} brought`}
           value={awayTeam}
           onChange={setAwayTeam}
-          allowedFrom={awayPool}
           max={6}
         />
         {teamError && (

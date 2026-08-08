@@ -5,7 +5,6 @@ from sqlalchemy import delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.pokemon import MatchPokemon, SeasonRosterPokemon
-from app.models.season_entry import SeasonEntry
 from app.schemas.pokemon import MatchPokemonSet, RosterPokemonSet
 
 
@@ -119,47 +118,3 @@ async def replace_match_team(
             )
         )
     await db.commit()
-
-
-async def get_eligible_roster_pokemon(
-    db: AsyncSession,
-    season_id: uuid.UUID,
-    player_id: uuid.UUID,
-    played_at: datetime | None,
-) -> list[SeasonRosterPokemon]:
-    """Ownership tenures that cover a match's date.
-
-    An undated legacy match returns the whole season history so an admin can
-    still backfill its team. Once the match has a date, acquisition/release
-    boundaries are enforced.
-    """
-    stmt = (
-        select(SeasonRosterPokemon)
-        .join(SeasonEntry, SeasonEntry.id == SeasonRosterPokemon.season_entry_id)
-        .where(SeasonEntry.season_id == season_id, SeasonEntry.player_id == player_id)
-    )
-    if played_at is not None:
-        stmt = stmt.where(
-            or_(
-                SeasonRosterPokemon.acquired_at.is_(None),
-                SeasonRosterPokemon.acquired_at <= played_at,
-            ),
-            or_(
-                SeasonRosterPokemon.released_at.is_(None),
-                SeasonRosterPokemon.released_at > played_at,
-            ),
-        )
-    result = await db.execute(stmt.order_by(SeasonRosterPokemon.slot))
-    return list(result.scalars().all())
-
-
-async def get_match_team_ids(
-    db: AsyncSession, match_id: uuid.UUID, player_id: uuid.UUID
-) -> set[int]:
-    result = await db.execute(
-        select(MatchPokemon.pokeapi_id).where(
-            MatchPokemon.match_id == match_id,
-            MatchPokemon.player_id == player_id,
-        )
-    )
-    return set(result.scalars().all())
