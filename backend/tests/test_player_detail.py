@@ -4,16 +4,15 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match, MatchStage, MatchStatus
-from app.models.player import Player
-from app.models.season import Season
 from app.models.season_entry import SeasonEntry
+from tests.conftest import make_player, make_season
 
 
 async def test_player_records_and_backlog(client: AsyncClient, db_session: AsyncSession) -> None:
-    season_old = Season(name="Old Record Season", start_date=date(2023, 1, 1), end_date=date(2023, 4, 1))
-    season_new = Season(name="New Record Season", start_date=date(2024, 1, 1), end_date=date(2024, 4, 1))
-    hero = Player(username="RecordHero")
-    rival = Player(username="RecordRival")
+    season_old = make_season(name="Old Record Season", start_date=date(2023, 1, 1), end_date=date(2023, 4, 1))
+    season_new = make_season(name="New Record Season", start_date=date(2024, 1, 1), end_date=date(2024, 4, 1))
+    hero = make_player(username="RecordHero")
+    rival = make_player(username="RecordRival")
     db_session.add_all([season_old, season_new, hero, rival])
     await db_session.flush()
 
@@ -56,13 +55,14 @@ async def test_player_records_and_backlog(client: AsyncClient, db_session: Async
     assert data["historical_record"] == {"wins": 1, "losses": 1}
     assert data["most_recent_season_record"] == {
         "season_id": str(season_new.id),
+        "season_slug": season_new.slug,
         "season_name": "New Record Season",
         "wins": 0,
         "losses": 1,
-            # No draft was recorded for this season, so the sprite roster is empty.
-            "pokemon": [],
-            "former_pokemon": [],
-        }
+        # No draft was recorded for this season, so the sprite roster is empty.
+        "pokemon": [],
+        "former_pokemon": [],
+    }
     assert [record["season_name"] for record in data["season_records"]] == [
         "New Record Season",
         "Old Record Season",
@@ -74,9 +74,9 @@ async def test_player_records_and_backlog(client: AsyncClient, db_session: Async
 
 
 async def test_player_optional_links_returned_when_present(client: AsyncClient, db_session: AsyncSession) -> None:
-    season = Season(name="Links Season", start_date=date(2024, 1, 1))
-    hero = Player(username="LinkHero")
-    rival = Player(username="LinkRival")
+    season = make_season(name="Links Season", start_date=date(2024, 1, 1))
+    hero = make_player(username="LinkHero")
+    rival = make_player(username="LinkRival")
     db_session.add_all([season, hero, rival])
     await db_session.flush()
     db_session.add(
@@ -99,9 +99,9 @@ async def test_player_optional_links_returned_when_present(client: AsyncClient, 
 
 
 async def test_player_links_absent_when_not_set(client: AsyncClient, db_session: AsyncSession) -> None:
-    season = Season(name="No Links Season", start_date=date(2024, 1, 1))
-    hero = Player(username="NoLinkHero")
-    rival = Player(username="NoLinkRival")
+    season = make_season(name="No Links Season", start_date=date(2024, 1, 1))
+    hero = make_player(username="NoLinkHero")
+    rival = make_player(username="NoLinkRival")
     db_session.add_all([season, hero, rival])
     await db_session.flush()
     db_session.add(

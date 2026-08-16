@@ -53,12 +53,14 @@ async def build_season_detail(db: AsyncSession, season: Season, today: date | No
 
     return SeasonDetail(
         id=season.id,
+        slug=season.slug,
         name=season.name,
         start_date=season.start_date,
         end_date=season.end_date,
         is_active=is_season_active(season, today),
         sheet_url=season.sheet_url,
         overview=season.overview,
+        hall_of_fame_description=season.hall_of_fame_description,
         champion=PlayerSummary.model_validate(season.champion) if season.champion else None,
         roster=[
             RosterEntry(

@@ -16,7 +16,7 @@ from app.models.player import Player
 from app.models.playoff_round import PlayoffRound
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 PRIVATE_MARKER = "trainer#4821"
 PRIVATE_FIELD = "discord_id"
@@ -25,9 +25,9 @@ PRIVATE_FIELD = "discord_id"
 async def _league_with_private_data(db_session: AsyncSession) -> tuple[Player, Season]:
     """A fully populated season whose players all carry a discord_id, so any
     leak anywhere in the response graph shows up as the marker string."""
-    season = Season(name="Privacy Season", start_date=date(2024, 1, 1))
-    home = Player(username="PrivacyHome", discord_id=PRIVATE_MARKER)
-    away = Player(username="PrivacyAway", discord_id="other#0002")
+    season = make_season(name="Privacy Season", start_date=date(2024, 1, 1))
+    home = make_player(username="PrivacyHome", discord_id=PRIVATE_MARKER)
+    away = make_player(username="PrivacyAway", discord_id="other#0002")
     db_session.add_all([season, home, away])
     await db_session.flush()
 

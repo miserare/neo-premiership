@@ -6,17 +6,17 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.player import Player
 from app.models.season import Season
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
 async def _league(db_session: AsyncSession, *, home_elo: int = 1000) -> tuple[Season, Player, Player]:
-    season = Season(name="Elo Test Season", start_date=date(2024, 1, 1))
-    home = Player(
+    season = make_season(name="Elo Test Season", start_date=date(2024, 1, 1))
+    home = make_player(
         username="EloHome",
         initial_elo_rating=home_elo,
         elo_rating=home_elo,
     )
-    away = Player(username="EloAway")
+    away = make_player(username="EloAway")
     db_session.add_all([season, home, away])
     await db_session.commit()
     return season, home, away
@@ -70,6 +70,7 @@ async def test_equal_ratings_move_by_32_points(
         {
             "match_id": response.json()["id"],
             "opponent_id": str(away.id),
+            "opponent_slug": away.slug,
             "opponent_username": away.username,
             "occurred_at": "2024-01-01T12:00:00",
             "result": 1,

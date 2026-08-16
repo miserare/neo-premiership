@@ -15,14 +15,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.crud.players import PLACEHOLDER_USERNAME
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.player import Player
-from app.models.season import Season
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
 async def _season_with_match(db_session: AsyncSession, label: str) -> tuple[Player, Player, Match]:
-    season = Season(name=f"Deletion Season {label}", start_date=date(2024, 1, 1))
-    leaver = Player(username=f"Leaving{label}")
-    stayer = Player(username=f"Staying{label}")
+    season = make_season(name=f"Deletion Season {label}", start_date=date(2024, 1, 1))
+    leaver = make_player(username=f"Leaving{label}")
+    stayer = make_player(username=f"Staying{label}")
     db_session.add_all([season, leaver, stayer])
     await db_session.flush()
 
@@ -109,10 +108,10 @@ async def test_placeholder_itself_cannot_be_deleted(client: AsyncClient, db_sess
 async def test_deleting_a_champion_transfers_the_title(client: AsyncClient, db_session: AsyncSession) -> None:
     """A season's champion must not silently become "no champion" - the bracket
     still shows them winning the final, so the placeholder inherits the title."""
-    champion = Player(username="ChampionToDelete")
+    champion = make_player(username="ChampionToDelete")
     db_session.add(champion)
     await db_session.flush()
-    season = Season(name="Championship Season", start_date=date(2024, 1, 1), champion_id=champion.id)
+    season = make_season(name="Championship Season", start_date=date(2024, 1, 1), champion_id=champion.id)
     db_session.add(season)
     await db_session.commit()
 

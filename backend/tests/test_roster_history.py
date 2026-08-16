@@ -7,15 +7,15 @@ from app.models.match import Match, MatchStage, MatchStatus
 from app.models.player import Player
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
 async def _league(
     db_session: AsyncSession,
 ) -> tuple[Season, Player, Player, SeasonEntry, SeasonEntry]:
-    season = Season(name="Ownership History Season", start_date=date(2024, 1, 1))
-    home = Player(username="OwnershipHome")
-    away = Player(username="OwnershipAway")
+    season = make_season(name="Ownership History Season", start_date=date(2024, 1, 1))
+    home = make_player(username="OwnershipHome")
+    away = make_player(username="OwnershipAway")
     db_session.add_all([season, home, away])
     await db_session.flush()
     home_entry = SeasonEntry(season_id=season.id, player_id=home.id)
@@ -240,7 +240,7 @@ async def test_the_remaining_match_team_rules_still_apply(
     """Dropping the ownership check must not drop the two checks that are about
     the match itself rather than the roster."""
     season, home, away, _, _ = await _league(db_session)
-    outsider = Player(username="OwnershipOutsider")
+    outsider = make_player(username="OwnershipOutsider")
     db_session.add(outsider)
     match = Match(
         season_id=season.id,

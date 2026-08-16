@@ -14,18 +14,18 @@ from app.models.player import Player
 from app.models.playoff_round import PlayoffRound
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
 async def _season(db: AsyncSession, name: str) -> Season:
-    season = Season(name=name, start_date=date(2024, 1, 1))
+    season = make_season(name=name, start_date=date(2024, 1, 1))
     db.add(season)
     await db.flush()
     return season
 
 
 async def _players(db: AsyncSession, *usernames: str) -> list[Player]:
-    players = [Player(username=username) for username in usernames]
+    players = [make_player(username=username) for username in usernames]
     db.add_all(players)
     await db.flush()
     return players
@@ -770,8 +770,8 @@ async def test_public_round_endpoints_expose_no_private_fields(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
     season = await _season(db_session, "Round Privacy Season")
-    home = Player(username="RoundPrivacyHome", discord_id="secret#4242")
-    away = Player(username="RoundPrivacyAway", discord_id="secret#4343")
+    home = make_player(username="RoundPrivacyHome", discord_id="secret#4242")
+    away = make_player(username="RoundPrivacyAway", discord_id="secret#4343")
     db_session.add_all([home, away])
     await db_session.flush()
     final = await _round(db_session, season, "Final", 1)

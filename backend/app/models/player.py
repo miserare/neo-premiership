@@ -2,24 +2,38 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, DateTime, Integer, String
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, Text
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 from app.utils.db_types import GUID
+from app.utils.slugs import MAX_SLUG_LENGTH
 
 if TYPE_CHECKING:
     from app.models.season import Season
 
 DEFAULT_ELO_RATING = 1000
+MAX_BIOGRAPHY_LENGTH = 4000
 
 
 class Player(Base):
     __tablename__ = "players"
+    __table_args__ = (
+        # lower()/length() both exist in PostgreSQL and SQLite, so tests
+        # exercise the same constraint production does. The full character set
+        # is enforced in the schema layer; what the database guarantees is the
+        # part uniqueness depends on - a stored slug is always lowercase and
+        # non-empty, which makes the plain unique index below case-insensitive.
+        CheckConstraint("slug = lower(slug) AND length(slug) > 0", name="ck_players_slug_lowercase"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     username: Mapped[str] = mapped_column(String(32), unique=True, index=True, nullable=False)
+    # Canonical URL identity: /player/psykick. Stored separately from username
+    # and deliberately not re-derived on rename, so existing links keep working.
+    slug: Mapped[str] = mapped_column(String(MAX_SLUG_LENGTH), unique=True, index=True, nullable=False)
+    biography: Mapped[str | None] = mapped_column(Text, nullable=True)
     discord_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     join_date: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

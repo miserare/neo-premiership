@@ -6,14 +6,14 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.player import Player
 from app.models.season import Season
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
 async def _make_match(db_session: AsyncSession, **match_kwargs) -> tuple[Season, Player, Player, Match]:
     suffix = str(abs(hash(str(match_kwargs))) % 100000)
-    season = Season(name=f"Series Season {suffix}", start_date=date(2024, 1, 1))
-    home = Player(username=f"HomeTrainer{suffix}")
-    away = Player(username=f"AwayTrainer{suffix}")
+    season = make_season(name=f"Series Season {suffix}", start_date=date(2024, 1, 1))
+    home = make_player(username=f"HomeTrainer{suffix}")
+    away = make_player(username=f"AwayTrainer{suffix}")
     db_session.add_all([season, home, away])
     await db_session.flush()
 
@@ -93,7 +93,7 @@ async def test_set_games_replaces_previous_series(client: AsyncClient, db_sessio
 
 async def test_set_games_rejects_non_participant_winner(client: AsyncClient, db_session: AsyncSession) -> None:
     _, _, _, match = await _make_match(db_session)
-    outsider = Player(username="OutsiderTrainer")
+    outsider = make_player(username="OutsiderTrainer")
     db_session.add(outsider)
     await db_session.commit()
 
@@ -181,7 +181,7 @@ async def test_set_match_team(client: AsyncClient, db_session: AsyncSession) -> 
 
 async def test_set_match_team_rejects_non_participant(client: AsyncClient, db_session: AsyncSession) -> None:
     _, _, _, match = await _make_match(db_session)
-    outsider = Player(username="BenchTrainer")
+    outsider = make_player(username="BenchTrainer")
     db_session.add(outsider)
     await db_session.commit()
 

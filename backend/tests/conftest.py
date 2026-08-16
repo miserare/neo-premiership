@@ -10,9 +10,12 @@ import logging
 from app.database import Base, get_db
 from app.main import app
 from app.models.admin import AdminUser
+from app.models.player import Player
+from app.models.season import Season
 from app.security.passwords import hash_password
 from app.security.sessions import CSRF_HEADER_NAME, SESSION_COOKIE_NAME, create_session
 from app.security.throttle import mutation_limiter
+from app.utils.slugs import slugify, slugify_season_name
 
 # The test administrator. Password is only ever used to seed a hash; the tests
 # authenticate with a real session, not by bypassing auth.
@@ -52,6 +55,24 @@ app.dependency_overrides[get_db] = _override_get_db
 logging.getLogger().setLevel(logging.WARNING)
 logging.getLogger("sqlalchemy.engine").setLevel(logging.WARNING)
 logging.getLogger("aiosqlite").setLevel(logging.WARNING)
+
+
+def make_player(username: str, **kwargs) -> Player:
+    """A Player with its slug filled in, for fixtures that build ORM objects.
+
+    Production resolves slugs in the router, where an unusable or already-taken
+    one becomes a 4xx an administrator can act on. There is deliberately no
+    model-level default doing it silently, so fixtures derive it here instead of
+    repeating the call at three dozen sites.
+    """
+    kwargs.setdefault("slug", slugify(username))
+    return Player(username=username, **kwargs)
+
+
+def make_season(name: str, **kwargs) -> Season:
+    """A Season with its slug filled in - see make_player."""
+    kwargs.setdefault("slug", slugify_season_name(name))
+    return Season(name=name, **kwargs)
 
 
 @pytest_asyncio.fixture(autouse=True)

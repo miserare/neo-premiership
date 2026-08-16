@@ -10,13 +10,22 @@ from app.models.pokemon import MatchPokemon
 from app.models.season import Season
 from app.schemas.player import PlayerCreate, PlayerUpdate
 from app.services.elo import recalculate_elo_ratings
+from app.utils.slugs import normalize_slug
 
 # Reserved for the tombstone player that inherits a deleted player's matches.
 PLACEHOLDER_USERNAME = "Deleted Player"
+PLACEHOLDER_SLUG = "deleted-player"
 
 
-async def create_player(db: AsyncSession, player_in: PlayerCreate) -> Player:
+async def create_player(db: AsyncSession, player_in: PlayerCreate, slug: str) -> Player:
+    """Create a player with an already-resolved slug.
+
+    The slug is passed in rather than derived here because deriving it can fail
+    (an unusable username) or conflict, and both are administrator-facing
+    errors the router reports with a status code and a message.
+    """
     data = player_in.model_dump()
+    data["slug"] = slug
     initial_rating = data.pop("initial_elo_rating", None)
     if initial_rating is None:
         initial_rating = DEFAULT_ELO_RATING
@@ -49,6 +58,20 @@ async def get_player_by_username(db: AsyncSession, username: str) -> Player | No
     return result.scalar_one_or_none()
 
 
+async def get_player_by_slug(db: AsyncSession, slug: str) -> Player | None:
+    """Look up by canonical slug. Stored slugs are always lowercase, so
+    normalizing the input is all case-insensitive matching requires."""
+    result = await db.execute(select(Player).where(Player.slug == normalize_slug(slug)))
+    return result.scalar_one_or_none()
+
+
+async def slug_is_taken(db: AsyncSession, slug: str, exclude_id: uuid.UUID | None = None) -> bool:
+    stmt = select(Player.id).where(Player.slug == normalize_slug(slug))
+    if exclude_id is not None:
+        stmt = stmt.where(Player.id != exclude_id)
+    return (await db.execute(stmt.limit(1))).first() is not None
+
+
 async def update_player(db: AsyncSession, player: Player, player_in: PlayerUpdate) -> Player:
     data = player_in.model_dump(exclude_unset=True)
     initial_rating = data.pop("initial_elo_rating", None)
@@ -77,7 +100,9 @@ async def get_or_create_placeholder_player(db: AsyncSession) -> Player:
     existing = await get_placeholder_player(db)
     if existing is not None:
         return existing
-    placeholder = Player(username=PLACEHOLDER_USERNAME, is_placeholder=True, is_active=False)
+    placeholder = Player(
+        username=PLACEHOLDER_USERNAME, slug=PLACEHOLDER_SLUG, is_placeholder=True, is_active=False
+    )
     db.add(placeholder)
     await db.commit()
     await db.refresh(placeholder)

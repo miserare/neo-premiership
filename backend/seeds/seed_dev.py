@@ -24,12 +24,14 @@ from app.models.playoff_round import PlayoffRound
 from app.models.pokemon import SeasonRosterPokemon
 from app.models.season import Season
 from app.models.season_entry import SeasonEntry
+from app.utils.slugs import slugify, slugify_season_name
 
 
 async def _get_or_create_player(db: AsyncSession, username: str, **kwargs) -> tuple[Player, bool]:
     existing = (await db.execute(select(Player).where(Player.username == username))).scalar_one_or_none()
     if existing is not None:
         return existing, False
+    kwargs.setdefault("slug", slugify(username))
     player = Player(username=username, **kwargs)
     db.add(player)
     await db.flush()
@@ -40,6 +42,7 @@ async def _get_or_create_season(db: AsyncSession, name: str, **kwargs) -> tuple[
     existing = (await db.execute(select(Season).where(Season.name == name))).scalar_one_or_none()
     if existing is not None:
         return existing, False
+    kwargs.setdefault("slug", slugify_season_name(name))
     season = Season(name=name, **kwargs)
     db.add(season)
     await db.flush()

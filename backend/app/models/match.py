@@ -3,7 +3,8 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Enum, ForeignKey, Index, Integer, String, text
+from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -33,6 +34,10 @@ class Match(Base):
     __table_args__ = (
         CheckConstraint("home_player_id != away_player_id", name="ck_matches_distinct_players"),
         CheckConstraint("bracket_order IS NULL OR bracket_order > 0", name="ck_matches_bracket_order_positive"),
+        CheckConstraint(
+            "homepage_feature_order IS NULL OR homepage_feature_order > 0",
+            name="ck_matches_homepage_feature_order_positive",
+        ),
         # Two matches cannot occupy the same slot in the same round. Partial, so
         # the many matches with no round (group stage) or no slot yet are not
         # forced into a single-row uniqueness class. Both dialect keywords are
@@ -118,6 +123,18 @@ class Match(Base):
 
     replay_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     youtube_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+
+    # --- homepage highlighting ---------------------------------------------
+    # An explicit administrator decision, not a heuristic over dates or status:
+    # a featured match appears in the homepage fixtures list whatever week it
+    # falls in and whether it is scheduled, completed or cancelled.
+    featured_on_homepage: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sa_false(), nullable=False, index=True
+    )
+    # Position among the featured matches; null sorts after every numbered one.
+    # Not unique - two matches sharing a position fall back to the deterministic
+    # ordering in services.home rather than rejecting an administrator's edit.
+    homepage_feature_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     # lazy="raise" forces call sites to eager-load these via joinedload/selectinload
     # (async SQLAlchemy can't lazy-load outside a greenlet anyway) so N+1s fail loudly.

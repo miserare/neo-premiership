@@ -4,19 +4,17 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match, MatchStage, MatchStatus
-from app.models.player import Player
 from app.models.playoff_round import PlayoffRound
-from app.models.season import Season
 from app.models.season_entry import SeasonEntry
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
 async def test_update_season_champion_reflected_in_response(client: AsyncClient, db_session: AsyncSession) -> None:
     """Regression test: PATCHing champion_id on a season already loaded in this
     request (the router fetches it before updating) must return the new
     champion, not whatever `champion` was at load time."""
-    season = Season(name="Champion Update Season", start_date=date(2024, 1, 1))
-    player = Player(username="NewChampionTrainer")
+    season = make_season(name="Champion Update Season", start_date=date(2024, 1, 1))
+    player = make_player(username="NewChampionTrainer")
     db_session.add_all([season, player])
     await db_session.commit()
 
@@ -33,8 +31,8 @@ async def test_update_season_champion_reflected_in_response(client: AsyncClient,
 async def test_search_seasons_case_insensitive(client: AsyncClient, db_session: AsyncSession) -> None:
     db_session.add_all(
         [
-            Season(name="Alpha Cup", start_date=date(2024, 1, 1)),
-            Season(name="Beta League", start_date=date(2023, 1, 1)),
+            make_season(name="Alpha Cup", start_date=date(2024, 1, 1)),
+            make_season(name="Beta League", start_date=date(2023, 1, 1)),
         ]
     )
     await db_session.commit()
@@ -50,8 +48,8 @@ async def test_search_seasons_case_insensitive(client: AsyncClient, db_session: 
 async def test_list_seasons_orders_newest_first(client: AsyncClient, db_session: AsyncSession) -> None:
     db_session.add_all(
         [
-            Season(name="Older Season", start_date=date(2023, 1, 1)),
-            Season(name="Newer Season", start_date=date(2024, 1, 1)),
+            make_season(name="Older Season", start_date=date(2023, 1, 1)),
+            make_season(name="Newer Season", start_date=date(2024, 1, 1)),
         ]
     )
     await db_session.commit()
@@ -71,8 +69,8 @@ async def test_get_season_not_found(client: AsyncClient) -> None:
 async def test_list_roster_includes_entry_ids_and_tiebreaker(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    season = Season(name="Roster Listing Season", start_date=date(2024, 1, 1))
-    player = Player(username="RosterListingTrainer")
+    season = make_season(name="Roster Listing Season", start_date=date(2024, 1, 1))
+    player = make_player(username="RosterListingTrainer")
     db_session.add_all([season, player])
     await db_session.flush()
     entry = SeasonEntry(season_id=season.id, player_id=player.id, group_label="A", tiebreaker_value=1.5)
@@ -98,10 +96,10 @@ async def test_list_roster_season_not_found(client: AsyncClient) -> None:
 async def test_season_standings_use_only_completed_group_matches(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    season = Season(name="Standings Season", start_date=date(2024, 1, 1))
-    alice = Player(username="AliceStandings")
-    bob = Player(username="BobStandings")
-    carol = Player(username="CarolStandings")
+    season = make_season(name="Standings Season", start_date=date(2024, 1, 1))
+    alice = make_player(username="AliceStandings")
+    bob = make_player(username="BobStandings")
+    carol = make_player(username="CarolStandings")
     db_session.add_all([season, alice, bob, carol])
     await db_session.flush()
 
@@ -144,11 +142,11 @@ async def test_season_standings_use_only_completed_group_matches(
 
 
 async def test_playoff_bracket_ordering(client: AsyncClient, db_session: AsyncSession) -> None:
-    season = Season(name="Bracket Season", start_date=date(2024, 1, 1))
-    p1 = Player(username="BracketP1")
-    p2 = Player(username="BracketP2")
-    p3 = Player(username="BracketP3")
-    p4 = Player(username="BracketP4")
+    season = make_season(name="Bracket Season", start_date=date(2024, 1, 1))
+    p1 = make_player(username="BracketP1")
+    p2 = make_player(username="BracketP2")
+    p3 = make_player(username="BracketP3")
+    p4 = make_player(username="BracketP4")
     db_session.add_all([season, p1, p2, p3, p4])
     await db_session.flush()
 
@@ -195,8 +193,8 @@ async def test_set_draft_pool_accepts_alternate_forms(client: AsyncClient, db_se
     """Alternate forms are stored by PokeAPI id, which runs to 10000+ for megas,
     regional variants and Gigantamax - nothing may cap pokeapi_id to the 1-1025
     national dex range."""
-    season = Season(name="Draft Forms Season", start_date=date(2024, 1, 1))
-    player = Player(username="DraftFormsTrainer")
+    season = make_season(name="Draft Forms Season", start_date=date(2024, 1, 1))
+    player = make_player(username="DraftFormsTrainer")
     db_session.add_all([season, player])
     await db_session.flush()
     entry = SeasonEntry(season_id=season.id, player_id=player.id)
@@ -229,8 +227,8 @@ async def test_a_form_is_distinct_from_its_base_species(
 ) -> None:
     """Charizard and Mega Charizard X are different ids, so drafting both is not
     a duplicate."""
-    season = Season(name="Distinct Forms Season", start_date=date(2024, 1, 1))
-    player = Player(username="DistinctFormsTrainer")
+    season = make_season(name="Distinct Forms Season", start_date=date(2024, 1, 1))
+    player = make_player(username="DistinctFormsTrainer")
     db_session.add_all([season, player])
     await db_session.flush()
     entry = SeasonEntry(season_id=season.id, player_id=player.id)

@@ -3,8 +3,7 @@ from datetime import date
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.season import Season
-from tests.conftest import ADMIN_HEADERS
+from tests.conftest import ADMIN_HEADERS, make_season
 
 
 async def test_site_links_start_empty(client: AsyncClient) -> None:
@@ -29,7 +28,7 @@ async def test_setting_links_requires_admin(client: AsyncClient) -> None:
 async def test_overrides_replace_the_derived_home_links(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    season = Season(
+    season = make_season(
         name="Override Season",
         start_date=date(2024, 1, 1),
         sheet_url="https://docs.google.com/spreadsheets/derived",
@@ -82,7 +81,7 @@ async def test_url_without_label_gets_a_readable_fallback(
 async def test_clearing_an_override_restores_the_derived_link(
     client: AsyncClient, db_session: AsyncSession
 ) -> None:
-    season = Season(
+    season = make_season(
         name="Restore Season",
         start_date=date(2024, 1, 1),
         sheet_url="https://docs.google.com/spreadsheets/derived",

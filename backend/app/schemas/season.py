@@ -3,6 +3,8 @@ from datetime import date
 
 from pydantic import BaseModel, ConfigDict, Field, HttpUrl
 
+from app.models.season import MAX_HALL_OF_FAME_DESCRIPTION_LENGTH
+from app.schemas.common import SlugStr
 from app.schemas.match import MatchRead
 from app.schemas.player import PlayerSummary
 from app.schemas.pokemon import SeasonRosterPokemonRead
@@ -12,6 +14,7 @@ class SeasonSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
+    slug: str
     name: str
     start_date: date
     end_date: date | None
@@ -20,19 +23,29 @@ class SeasonSummary(BaseModel):
 
 class SeasonCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=64)
+    # Derived from the name when omitted ("Season 6" -> "6"); supply it for a
+    # name that has no useful short form.
+    slug: SlugStr | None = None
     start_date: date
     end_date: date | None = None
     champion_id: uuid.UUID | None = None
     overview: str | None = None
+    hall_of_fame_description: str | None = Field(
+        default=None, max_length=MAX_HALL_OF_FAME_DESCRIPTION_LENGTH
+    )
     sheet_url: HttpUrl | None = None
 
 
 class SeasonUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=64)
+    slug: SlugStr | None = None
     start_date: date | None = None
     end_date: date | None = None
     champion_id: uuid.UUID | None = None
     overview: str | None = None
+    hall_of_fame_description: str | None = Field(
+        default=None, max_length=MAX_HALL_OF_FAME_DESCRIPTION_LENGTH
+    )
     sheet_url: HttpUrl | None = None
 
 
@@ -100,14 +113,17 @@ class SeasonStream(BaseModel):
 
 class SeasonDetail(BaseModel):
     id: uuid.UUID
+    slug: str
     name: str
     start_date: date
     end_date: date | None
     is_active: bool
     sheet_url: str | None
     overview: str | None
+    hall_of_fame_description: str | None
     champion: PlayerSummary | None
     roster: list[RosterEntry]
     standings: list[StandingsGroup]
     bracket: list[BracketRound]
     streams: list[SeasonStream]
+

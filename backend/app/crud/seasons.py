@@ -11,6 +11,7 @@ from app.models.season import Season
 from app.models.season_entry import SeasonEntry
 from app.schemas.season import SeasonCreate, SeasonUpdate
 from app.utils.serialization import stringify_urls
+from app.utils.slugs import normalize_slug
 
 _URL_FIELDS = ("sheet_url",)
 
@@ -34,6 +35,34 @@ async def get_season_by_id(db: AsyncSession, season_id: uuid.UUID) -> Season | N
     return result.unique().scalar_one_or_none()
 
 
+async def get_season_by_slug(db: AsyncSession, slug: str) -> Season | None:
+    stmt = _with_champion(select(Season)).where(Season.slug == normalize_slug(slug))
+    result = await db.execute(stmt)
+    return result.unique().scalar_one_or_none()
+
+
+async def slug_is_taken(db: AsyncSession, slug: str, exclude_id: uuid.UUID | None = None) -> bool:
+    stmt = select(Season.id).where(Season.slug == normalize_slug(slug))
+    if exclude_id is not None:
+        stmt = stmt.where(Season.id != exclude_id)
+    return (await db.execute(stmt.limit(1))).first() is not None
+
+
+async def get_champion_seasons(db: AsyncSession) -> list[Season]:
+    """Seasons with a recorded champion, newest first.
+
+    The champion is eager-loaded because every caller renders them; without it
+    the relationship's lazy="raise" would fire during serialization.
+    """
+    stmt = (
+        _with_champion(select(Season))
+        .where(Season.champion_id.is_not(None))
+        .order_by(Season.start_date.desc(), Season.id)
+    )
+    result = await db.execute(stmt)
+    return list(result.unique().scalars().all())
+
+
 async def get_active_season(db: AsyncSession, today: date) -> Season | None:
     """A season is active when today is on/after start_date and its end_date
     is either null or has not yet passed."""
@@ -52,8 +81,10 @@ async def get_most_recently_started_season(db: AsyncSession) -> Season | None:
     return result.unique().scalars().first()
 
 
-async def create_season(db: AsyncSession, season_in: SeasonCreate) -> Season:
+async def create_season(db: AsyncSession, season_in: SeasonCreate, slug: str) -> Season:
+    """Create a season with an already-resolved slug - see crud.players.create_player."""
     data = stringify_urls(season_in.model_dump(), _URL_FIELDS)
+    data["slug"] = slug
     season = Season(**data)
     db.add(season)
     await db.commit()

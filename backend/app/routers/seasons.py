@@ -27,7 +27,9 @@ from app.schemas.season import (
     SeasonSummary,
     SeasonUpdate,
 )
-from app.services.seasons import build_season_detail
+from app.models.season import Season
+from app.services.seasons import build_season_detail, get_current_season
+from app.utils.slugs import RESERVED_SEASON_SLUGS, slugify_season_name
 
 router = APIRouter(prefix="/seasons", tags=["seasons"])
 
@@ -42,6 +44,47 @@ async def _validate_champion(db: AsyncSession, champion_id: uuid.UUID | None) ->
         )
 
 
+async def _resolve_slug(
+    db: AsyncSession,
+    requested: str | None,
+    *,
+    derive_from: str,
+    exclude_id: uuid.UUID | None = None,
+) -> str:
+    """The slug to store, or an administrator-facing error. See routers.players.
+
+    An omitted slug is derived from the season name, dropping a leading
+    "Season" so "Season 6" becomes "6" - the word is already in the URL path.
+    """
+    slug = requested or slugify_season_name(derive_from)
+    if not slug:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f'No URL slug could be derived from "{derive_from}". Enter one explicitly.',
+        )
+    if slug in RESERVED_SEASON_SLUGS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=f'"{slug}" is reserved and cannot be used as a slug'
+        )
+    if await crud.slug_is_taken(db, slug, exclude_id=exclude_id):
+        detail = (
+            f'The slug "{slug}" is already used by another season.'
+            if requested
+            else f'The slug "{slug}" derived from that name is already taken. Enter a different one.'
+        )
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=detail)
+    return slug
+
+
+async def _season_by_reference(db: AsyncSession, reference: str) -> Season | None:
+    """Resolve a canonical slug, or a legacy UUID - see routers.players."""
+    try:
+        season_id = uuid.UUID(reference)
+    except ValueError:
+        return await crud.get_season_by_slug(db, reference)
+    return await crud.get_season_by_id(db, season_id)
+
+
 @router.get("", response_model=list[SeasonSummary])
 async def list_seasons(
     skip: int = 0, limit: int = 100, q: str | None = None, db: AsyncSession = Depends(get_db)
@@ -54,18 +97,36 @@ async def list_seasons(
 )
 async def create_season(season_in: SeasonCreate, db: AsyncSession = Depends(get_db)) -> SeasonSummary:
     await _validate_champion(db, season_in.champion_id)
+    slug = await _resolve_slug(db, season_in.slug, derive_from=season_in.name)
     try:
-        return await crud.create_season(db, season_in)
+        return await crud.create_season(db, season_in, slug)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="A season with that name already exists"
+            status_code=status.HTTP_409_CONFLICT, detail="A season with that name or slug already exists"
         ) from None
 
 
-@router.get("/{season_id}", response_model=SeasonDetail)
-async def get_season(season_id: uuid.UUID, db: AsyncSession = Depends(get_db)) -> SeasonDetail:
-    season = await crud.get_season_by_id(db, season_id)
+# Declared before /{season_ref} so the literal path wins the match. "current" is
+# also a reserved slug, so no season can shadow it.
+@router.get("/current", response_model=SeasonDetail)
+async def get_current_season_detail(db: AsyncSession = Depends(get_db)) -> SeasonDetail:
+    """The season the league is in right now, for the bare /standings route.
+
+    Between seasons this is the most recently *started* season, and the
+    response's `is_active` flag is false - the page uses that to say it is
+    showing a finished season rather than implying play is under way.
+    """
+    season, _is_active = await get_current_season(db)
+    if season is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="No seasons have been scheduled yet")
+    return await build_season_detail(db, season)
+
+
+@router.get("/{season_ref}", response_model=SeasonDetail)
+async def get_season(season_ref: str, db: AsyncSession = Depends(get_db)) -> SeasonDetail:
+    """A season by canonical slug, or by legacy UUID."""
+    season = await _season_by_reference(db, season_ref)
     if season is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     return await build_season_detail(db, season)
@@ -80,12 +141,15 @@ async def update_season(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Season not found")
     if "champion_id" in season_in.model_fields_set:
         await _validate_champion(db, season_in.champion_id)
+    # Renaming a season leaves its slug, and every link to it, alone.
+    if "slug" in season_in.model_fields_set and season_in.slug is not None:
+        await _resolve_slug(db, season_in.slug, derive_from=season.name, exclude_id=season.id)
     try:
         return await crud.update_season(db, season, season_in)
     except IntegrityError:
         await db.rollback()
         raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT, detail="A season with that name already exists"
+            status_code=status.HTTP_409_CONFLICT, detail="A season with that name or slug already exists"
         ) from None
 
 
