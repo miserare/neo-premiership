@@ -14,9 +14,9 @@ from app.crud import pokemon as pokemon_crud
 from app.crud import seasons as season_crud
 from app.database import get_db
 from app.models.match import Match, MatchStage, MatchStatus
-from app.schemas.match import MatchCreate, MatchGamesSet, MatchRead, MatchUpdate
+from app.schemas.match import MatchCreate, MatchGamesSet, MatchRead, MatchResultSet, MatchUpdate
 from app.schemas.pokemon import MatchPokemonSet
-from app.services.matches import to_match_read
+from app.services.matches import derive_series_result, to_match_read
 
 router = APIRouter(prefix="/matches", tags=["matches"])
 
@@ -199,6 +199,62 @@ async def set_match_games(
     await game_crud.replace_games(db, match_id, games_in)
     refreshed = await _get_match_or_404(db, match_id, refresh=True)
     return to_match_read(refreshed)
+
+
+@router.put("/{match_id}/result", response_model=MatchRead, dependencies=[Depends(require_admin)])
+async def set_match_result(
+    match_id: uuid.UUID, result_in: MatchResultSet, db: AsyncSession = Depends(get_db)
+) -> MatchRead:
+    """Record a match's whole result in one transaction.
+
+    Games, both teams, the completion timestamp, the YouTube link and the status
+    are saved together, and the series score and match winner are derived from
+    the game winners rather than entered a second time. Elo is rebuilt once,
+    after the complete state is in place.
+
+    The older PATCH/games/teams endpoints still work - they are what the
+    previous release's admin UI used - but nothing new should call them.
+    """
+    match = await _get_match_or_404(db, match_id)
+
+    participants = (match.home_player_id, match.away_player_id)
+    for game in result_in.games:
+        if game.winner_id not in participants:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"game {game.game_number}: winner_id must be the home or away player",
+            )
+
+    home_score, away_score, derived_winner_id = derive_series_result(
+        match, [game.winner_id for game in result_in.games]
+    )
+
+    if result_in.status == MatchStatus.COMPLETED and derived_winner_id is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=(
+                f"This series is level at {home_score}-{away_score}. "
+                "A completed match needs a decisive result - add the deciding game, "
+                "or save it as scheduled while it is still in progress."
+            ),
+        )
+
+    # A match still in progress has no winner yet, and no scores either: the
+    # per-game rows already carry the running tally.
+    if result_in.status == MatchStatus.COMPLETED:
+        winner_id: uuid.UUID | None = derived_winner_id
+    else:
+        winner_id = None
+
+    updated = await crud.save_match_result(
+        db,
+        match,
+        result_in,
+        home_score=home_score if result_in.games else None,
+        away_score=away_score if result_in.games else None,
+        winner_id=winner_id,
+    )
+    return to_match_read(updated)
 
 
 @router.put("/{match_id}/teams/{player_id}", response_model=MatchRead, dependencies=[Depends(require_admin)])

@@ -12,6 +12,8 @@ from app.schemas.match import (
     MatchGameRead,
     MatchGamesSet,
     MatchRead,
+    MatchResultGameInput,
+    MatchResultSet,
     MatchSeries,
     MatchUpdate,
 )
@@ -80,6 +82,8 @@ __all__ = [
     "MatchPokemonRead",
     "MatchPokemonSet",
     "MatchRead",
+    "MatchResultGameInput",
+    "MatchResultSet",
     "MatchSeries",
     "MatchUpdate",
     "PokemonInput",

@@ -2,13 +2,15 @@ import uuid
 from collections.abc import Sequence
 from datetime import datetime
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, delete, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.models.match import Match, MatchStage, MatchStatus
+from app.models.match_game import MatchGame
 from app.models.playoff_round import PlayoffRound
-from app.schemas.match import MatchCreate, MatchUpdate
+from app.models.pokemon import MatchPokemon
+from app.schemas.match import MatchCreate, MatchResultSet, MatchUpdate
 from app.services.elo import recalculate_elo_ratings
 from app.utils.serialization import stringify_urls
 
@@ -198,6 +200,80 @@ async def update_match(db: AsyncSession, match: Match, match_in: MatchUpdate) ->
     # loaded, and with expire_on_commit=False a plain re-query will not replace
     # an already-populated relationship - so a match moved to another round
     # would come back still reporting the old one.
+    loaded = await get_match_by_id(db, match.id, refresh=True)
+    assert loaded is not None
+    return loaded
+
+
+async def save_match_result(
+    db: AsyncSession,
+    match: Match,
+    result_in: MatchResultSet,
+    *,
+    home_score: int | None,
+    away_score: int | None,
+    winner_id: uuid.UUID | None,
+) -> Match:
+    """Write a match's games, both teams, status and derived result atomically.
+
+    One transaction and one Elo rebuild for the whole thing. The previous
+    workflow committed the match, then the games, then each team separately,
+    which meant an interrupted save could leave a completed match with the old
+    series still attached - and it rebuilt Elo once per request.
+
+    The derived values are passed in because deriving them needs the match's
+    participants, which the router has already validated the games against.
+    """
+    try:
+        # Delete-then-insert for both collections: the (match_id, game_number)
+        # unique constraint makes in-place renumbering order-dependent, and a
+        # series is a handful of rows. The flush between delete and insert stops
+        # the two statements racing each other within the transaction.
+        await db.execute(delete(MatchGame).where(MatchGame.match_id == match.id))
+        await db.execute(delete(MatchPokemon).where(MatchPokemon.match_id == match.id))
+        await db.flush()
+
+        for game in result_in.games:
+            db.add(
+                MatchGame(
+                    match_id=match.id,
+                    game_number=game.game_number,
+                    winner_id=game.winner_id,
+                    replay_url=str(game.replay_url) if game.replay_url is not None else None,
+                )
+            )
+        for player_id, team in (
+            (match.home_player_id, result_in.home_team),
+            (match.away_player_id, result_in.away_team),
+        ):
+            for pokemon in team:
+                db.add(
+                    MatchPokemon(
+                        match_id=match.id,
+                        player_id=player_id,
+                        pokeapi_id=pokemon.pokeapi_id,
+                        species_name=pokemon.species_name,
+                    )
+                )
+
+        match.status = result_in.status
+        match.completed_at = result_in.completed_at
+        match.winner_id = winner_id
+        match.home_score = home_score
+        match.away_score = away_score
+        match.youtube_url = str(result_in.youtube_url) if result_in.youtube_url is not None else None
+
+        await db.flush()
+        # Once, with the whole result already in place - so a corrected earlier
+        # match rebuilds every later rating from the new state exactly once.
+        await recalculate_elo_ratings(db)
+        await db.commit()
+    except Exception:
+        # Nothing partial survives: no games without teams, no completed status
+        # without its series, no Elo rebuilt from a half-written match.
+        await db.rollback()
+        raise
+
     loaded = await get_match_by_id(db, match.id, refresh=True)
     assert loaded is not None
     return loaded

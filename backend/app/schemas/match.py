@@ -5,7 +5,7 @@ from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
 
 from app.models.match import MatchStage, MatchStatus
 from app.schemas.player import PlayerSummary
-from app.schemas.pokemon import MatchPokemonRead
+from app.schemas.pokemon import MatchPokemonRead, PokemonInput
 
 
 class MatchGameRead(BaseModel):
@@ -141,4 +141,65 @@ class MatchUpdate(BaseModel):
     def _validate_timestamps(self) -> "MatchUpdate":
         if self.completed_at is not None and self.completed_at.utcoffset() is None:
             raise ValueError("completed_at must include a timezone")
+        return self
+
+
+# ------------------------------------------------------- unified result entry
+
+
+class MatchResultGameInput(BaseModel):
+    """One game of a recorded series.
+
+    `winner_id` is required, unlike MatchGameInput: this endpoint records what
+    happened, and a played game has a winner. A game that has not been played
+    yet is simply not sent.
+    """
+
+    game_number: int = Field(..., ge=1, le=9)
+    winner_id: uuid.UUID
+    replay_url: HttpUrl | None = None
+
+
+class MatchResultSet(BaseModel):
+    """A match's whole result, saved in one transaction.
+
+    Replaces the previous three-request dance (PATCH the match, PUT the games,
+    PUT each team). The series score and the match winner are *derived* from the
+    game winners rather than typed in a second time, which is what makes a
+    disagreement between them impossible.
+    """
+
+    # Only these two: cancelling a match stays on the existing PATCH endpoint,
+    # which is also where the cancellation reasons and corrections already live.
+    status: MatchStatus = MatchStatus.COMPLETED
+    completed_at: datetime | None = None
+    games: list[MatchResultGameInput] = Field(default_factory=list, max_length=9)
+    # Teams as actually used. Sent every time so a result save is a complete
+    # statement of the match; omitting a side clears it.
+    home_team: list[PokemonInput] = Field(default_factory=list, max_length=6)
+    away_team: list[PokemonInput] = Field(default_factory=list, max_length=6)
+    youtube_url: HttpUrl | None = None
+
+    @model_validator(mode="after")
+    def _validate(self) -> "MatchResultSet":
+        if self.status not in (MatchStatus.COMPLETED, MatchStatus.SCHEDULED):
+            raise ValueError("status must be 'completed' or 'scheduled'; cancel a match from match details")
+
+        numbers = [game.game_number for game in self.games]
+        if len(numbers) != len(set(numbers)):
+            raise ValueError("game_number must be unique within a match")
+
+        for team in (self.home_team, self.away_team):
+            ids = [pokemon.pokeapi_id for pokemon in team]
+            if len(ids) != len(set(ids)):
+                raise ValueError("the same Pokémon cannot appear twice on one match team")
+
+        if self.completed_at is not None and self.completed_at.utcoffset() is None:
+            raise ValueError("completed_at must include a timezone")
+
+        if self.status == MatchStatus.COMPLETED:
+            if self.completed_at is None:
+                raise ValueError("a completed match requires completed_at for Elo ordering")
+            if not self.games:
+                raise ValueError("a completed match needs at least one game to derive its result from")
         return self

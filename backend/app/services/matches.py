@@ -1,3 +1,5 @@
+import uuid
+from collections.abc import Sequence
 from datetime import datetime, timezone
 
 from app.models.match import Match, MatchStage
@@ -86,6 +88,27 @@ def to_match_read(match: Match) -> MatchRead:
             MatchPokemonRead.model_validate(p) for p in match.pokemon if p.player_id == match.away_player_id
         ],
     )
+
+
+def derive_series_result(
+    match: Match, game_winner_ids: Sequence[uuid.UUID]
+) -> tuple[int, int, uuid.UUID | None]:
+    """(home_score, away_score, winner_id) implied by who won each game.
+
+    The single source of truth for a match's score and winner. Nothing asks an
+    administrator to type the series score alongside the games and then hope the
+    two agree - a level series simply has no winner, which is what lets the
+    result endpoint refuse to mark it completed.
+    """
+    home_wins = sum(1 for winner_id in game_winner_ids if winner_id == match.home_player_id)
+    away_wins = sum(1 for winner_id in game_winner_ids if winner_id == match.away_player_id)
+    if home_wins > away_wins:
+        winner_id = match.home_player_id
+    elif away_wins > home_wins:
+        winner_id = match.away_player_id
+    else:
+        winner_id = None
+    return home_wins, away_wins, winner_id
 
 
 def match_recency(match: Match) -> datetime:
