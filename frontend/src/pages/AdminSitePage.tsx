@@ -1,7 +1,11 @@
 import { type FormEvent, useEffect, useState } from "react";
 
+import SaveStatus from "../components/SaveStatus";
 import { useAsync } from "../hooks/useAsync";
-import { api, ApiError } from "../lib/api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMutation } from "../hooks/useMutation";
+import { formatDate } from "../lib/format";
+import { api } from "../lib/api";
 import type { AnnouncementRead, SiteLinks } from "../types";
 
 /** datetime-local wants "YYYY-MM-DDTHH:mm"; the API speaks ISO-8601 with a zone. */
@@ -39,6 +43,7 @@ const EMPTY_ANNOUNCEMENT: AnnouncementFormState = {
 };
 
 export default function AdminSitePage() {
+  useDocumentTitle("Admin Site");
   return (
     <div className="admin-site-page">
       <h1>Site Content</h1>
@@ -51,10 +56,9 @@ export default function AdminSitePage() {
 /* -------------------------------------------------------------------------- */
 
 function HomeLinksEditor() {
-  const { data, isLoading, error, refetch } = useAsync<SiteLinks>(() => api.siteLinks.get(), []);
+  const { data, isLoading, error, setData } = useAsync<SiteLinks>(() => api.siteLinks.get(), []);
   const [form, setForm] = useState<SiteLinks>(EMPTY_LINKS);
-  const [saveError, setSaveError] = useState<string | null>(null);
-  const [saved, setSaved] = useState(false);
+  const mutation = useMutation();
 
   useEffect(() => {
     if (data) setForm(data);
@@ -66,19 +70,15 @@ function HomeLinksEditor() {
 
   function set(key: keyof SiteLinks, value: string) {
     setForm({ ...form, [key]: value.trim() === "" ? null : value });
-    setSaved(false);
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setSaveError(null);
-    setSaved(false);
-    try {
-      await api.siteLinks.set(form);
-      setSaved(true);
-      refetch();
-    } catch (err) {
-      setSaveError(err instanceof ApiError ? err.message : "Failed to save links.");
+    const saved = await mutation.run("links", () => api.siteLinks.set(form), "Home page links saved.");
+    if (saved.ok) {
+      // The response is the new state, so nothing is refetched and the form
+      // keeps its scroll position and focus.
+      setData(saved.value);
     }
   }
 
@@ -164,14 +164,9 @@ function HomeLinksEditor() {
           />
         </div>
 
-        {saveError && (
-          <p role="alert" className="admin-form__error">
-            {saveError}
-          </p>
-        )}
-        {saved && <p className="admin-form__saved">Saved.</p>}
-        <button type="submit" className="admin-form__submit">
-          Save links
+        <SaveStatus success={mutation.success} error={mutation.error} />
+        <button type="submit" className="admin-form__submit" disabled={mutation.isPending("links")}>
+          {mutation.isPending("links") ? "Saving..." : "Save links"}
         </button>
       </form>
     </section>
@@ -185,16 +180,13 @@ function AnnouncementsEditor() {
     data: announcements,
     isLoading,
     error,
-    refetch,
+    setData,
   } = useAsync<AnnouncementRead[]>(() => api.announcements.list(), []);
 
+  const mutation = useMutation();
   const [createForm, setCreateForm] = useState<AnnouncementFormState>(EMPTY_ANNOUNCEMENT);
-  const [createError, setCreateError] = useState<string | null>(null);
-
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<AnnouncementFormState>(EMPTY_ANNOUNCEMENT);
-  const [editError, setEditError] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<string | null>(null);
 
   function toPayload(form: AnnouncementFormState) {
     return {
@@ -207,19 +199,19 @@ function AnnouncementsEditor() {
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCreateError(null);
-    try {
-      await api.announcements.create(toPayload(createForm));
+    const created = await mutation.run(
+      "create",
+      () => api.announcements.create(toPayload(createForm)),
+      "Announcement posted.",
+    );
+    if (created.ok) {
+      setData((current) => [created.value, ...(current ?? [])]);
       setCreateForm(EMPTY_ANNOUNCEMENT);
-      refetch();
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Failed to post announcement.");
     }
   }
 
   function startEdit(announcement: AnnouncementRead) {
     setEditingId(announcement.id);
-    setEditError(null);
     setEditForm({
       title: announcement.title,
       body: announcement.body,
@@ -231,30 +223,35 @@ function AnnouncementsEditor() {
   async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingId) return;
-    setEditError(null);
-    try {
-      await api.announcements.update(editingId, toPayload(editForm));
+    const updated = await mutation.run(
+      `edit:${editingId}`,
+      () => api.announcements.update(editingId, toPayload(editForm)),
+      "Announcement saved.",
+    );
+    if (updated.ok) {
+      setData((current) =>
+        (current ?? []).map((a) => (a.id === updated.value.id ? updated.value : a)),
+      );
       setEditingId(null);
-      refetch();
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "Failed to save announcement.");
     }
   }
 
   async function handleDelete(announcement: AnnouncementRead) {
     if (!window.confirm(`Delete "${announcement.title}"? This cannot be undone.`)) return;
-    setRowError(null);
-    try {
-      await api.announcements.delete(announcement.id);
-      refetch();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "Failed to delete announcement.");
+    const done = await mutation.run(
+      `delete:${announcement.id}`,
+      () => api.announcements.delete(announcement.id),
+      "Announcement deleted.",
+    );
+    if (done.ok) {
+      setData((current) => (current ?? []).filter((a) => a.id !== announcement.id));
     }
   }
 
   return (
     <section>
       <h2>Announcements</h2>
+      <SaveStatus success={mutation.success} />
 
       <form className="admin-form" onSubmit={handleCreate}>
         <h3>New announcement</h3>
@@ -274,8 +271,12 @@ function AnnouncementsEditor() {
             id="ann-body"
             value={createForm.body}
             onChange={(event) => setCreateForm({ ...createForm, body: event.target.value })}
+            rows={6}
             required
           />
+          <p className="admin-form__hint">
+            Plain text. Line breaks and blank lines are kept exactly as typed on the home page.
+          </p>
         </div>
         <div className="admin-form__row">
           <label htmlFor="ann-link">Link URL</label>
@@ -296,13 +297,13 @@ function AnnouncementsEditor() {
           />
           <p className="admin-form__hint">Leave blank to publish with the current time.</p>
         </div>
-        {createError && (
+        {mutation.errorFor("create") && (
           <p role="alert" className="admin-form__error">
-            {createError}
+            {mutation.errorFor("create")}
           </p>
         )}
-        <button type="submit" className="admin-form__submit">
-          Post announcement
+        <button type="submit" className="admin-form__submit" disabled={mutation.isPending("create")}>
+          {mutation.isPending("create") ? "Posting..." : "Post announcement"}
         </button>
       </form>
 
@@ -312,12 +313,6 @@ function AnnouncementsEditor() {
           {error}
         </p>
       )}
-      {rowError && (
-        <p role="alert" className="admin-page__error">
-          {rowError}
-        </p>
-      )}
-
       {!isLoading && !error && announcements && announcements.length === 0 && (
         <p>No announcements posted yet.</p>
       )}
@@ -344,6 +339,7 @@ function AnnouncementsEditor() {
                       id={`edit-body-${announcement.id}`}
                       value={editForm.body}
                       onChange={(event) => setEditForm({ ...editForm, body: event.target.value })}
+                      rows={6}
                       required
                     />
                   </div>
@@ -367,14 +363,18 @@ function AnnouncementsEditor() {
                       }
                     />
                   </div>
-                  {editError && (
+                  {mutation.errorFor(`edit:${announcement.id}`) && (
                     <p role="alert" className="admin-form__error">
-                      {editError}
+                      {mutation.errorFor(`edit:${announcement.id}`)}
                     </p>
                   )}
                   <div className="admin-match-card__actions">
-                    <button type="submit" className="admin-form__submit">
-                      Save
+                    <button
+                      type="submit"
+                      className="admin-form__submit"
+                      disabled={mutation.isPending(`edit:${announcement.id}`)}
+                    >
+                      {mutation.isPending(`edit:${announcement.id}`) ? "Saving..." : "Save"}
                     </button>
                     <button type="button" onClick={() => setEditingId(null)}>
                       Cancel
@@ -388,20 +388,25 @@ function AnnouncementsEditor() {
                   <div>
                     <strong>{announcement.title}</strong>
                     <span className="admin-match-card__meta">
-                      {new Date(announcement.published_at).toLocaleDateString(undefined, {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                      })}
+                      {formatDate(announcement.published_at)}
                     </span>
                   </div>
                   <div className="admin-players-page__actions">
                     <button type="button" onClick={() => startEdit(announcement)}>
                       Edit
                     </button>
-                    <button type="button" onClick={() => handleDelete(announcement)}>
-                      Delete
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(announcement)}
+                      disabled={mutation.isPending(`delete:${announcement.id}`)}
+                    >
+                      {mutation.isPending(`delete:${announcement.id}`) ? "Deleting..." : "Delete"}
                     </button>
+                    {mutation.errorFor(`delete:${announcement.id}`) && (
+                      <p role="alert" className="admin-form__error">
+                        {mutation.errorFor(`delete:${announcement.id}`)}
+                      </p>
+                    )}
                   </div>
                 </div>
               </li>

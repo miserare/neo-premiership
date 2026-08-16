@@ -157,10 +157,10 @@ export const api = {
     /** Administrative roster including private fields. Requires a session. */
     listAdmin: (params: ListParams = {}): Promise<PlayerAdmin[]> =>
       request<PlayerAdmin[]>(`/players/admin/list${buildQuery(params)}`),
-    create: (input: PlayerCreateInput): Promise<Player> =>
-      request<Player>("/players", { method: "POST", body: JSON.stringify(input) }),
-    update: (id: string, input: PlayerUpdateInput): Promise<Player> =>
-      request<Player>(`/players/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
+    create: (input: PlayerCreateInput): Promise<PlayerAdmin> =>
+      request<PlayerAdmin>("/players", { method: "POST", body: JSON.stringify(input) }),
+    update: (id: string, input: PlayerUpdateInput): Promise<PlayerAdmin> =>
+      request<PlayerAdmin>(`/players/${id}`, { method: "PATCH", body: JSON.stringify(input) }),
     delete: (id: string): Promise<void> => request<void>(`/players/${id}`, { method: "DELETE" }),
   },
   seasons: {

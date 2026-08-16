@@ -1,11 +1,16 @@
 import { type FormEvent, useState } from "react";
 
+import SaveStatus from "../components/SaveStatus";
 import { useAsync } from "../hooks/useAsync";
-import { api, ApiError } from "../lib/api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMutation } from "../hooks/useMutation";
+import { api } from "../lib/api";
 import type { PlayerAdmin } from "../types";
 
 interface PlayerFormState {
   username: string;
+  slug: string;
+  biography: string;
   discord_id: string;
   is_active: boolean;
   initial_elo_rating: string;
@@ -13,14 +18,20 @@ interface PlayerFormState {
 
 const EMPTY_FORM: PlayerFormState = {
   username: "",
+  slug: "",
+  biography: "",
   discord_id: "",
   is_active: true,
   initial_elo_rating: "",
 };
 
-function toPlayerInput(form: PlayerFormState) {
+function toCreateInput(form: PlayerFormState) {
   return {
     username: form.username.trim(),
+    // Omitted rather than empty: the server derives it from the username, and
+    // an empty string would be a validation error instead.
+    slug: form.slug.trim() || undefined,
+    biography: form.biography.trim() || null,
     discord_id: form.discord_id.trim() || null,
     is_active: form.is_active,
     initial_elo_rating:
@@ -28,38 +39,49 @@ function toPlayerInput(form: PlayerFormState) {
   };
 }
 
+function toUpdateInput(form: PlayerFormState) {
+  const { slug, ...rest } = toCreateInput(form);
+  // An untouched slug field is not sent at all, so renaming a player never
+  // rewrites the URL people have already shared.
+  return slug ? { ...rest, slug } : rest;
+}
+
 export default function AdminPlayersPage() {
-  const { data: players, isLoading, error, refetch } = useAsync<PlayerAdmin[]>(
-    () => api.players.listAdmin({ limit: 500 }),
-    [],
-  );
+  useDocumentTitle("Admin Players");
+  const {
+    data: players,
+    isLoading,
+    error,
+    setData,
+  } = useAsync<PlayerAdmin[]>(() => api.players.listAdmin({ limit: 500 }), []);
 
+  const mutation = useMutation();
   const [createForm, setCreateForm] = useState<PlayerFormState>(EMPTY_FORM);
-  const [createError, setCreateError] = useState<string | null>(null);
-
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<PlayerFormState>(EMPTY_FORM);
-  const [editError, setEditError] = useState<string | null>(null);
-
-  const [rowError, setRowError] = useState<string | null>(null);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCreateError(null);
-    try {
-      await api.players.create(toPlayerInput(createForm));
+    const created = await mutation.run(
+      "create",
+      () => api.players.create(toCreateInput(createForm)),
+      "Player created.",
+    );
+    if (created.ok) {
+      // Straight into local state from the response - no refetch, so the page
+      // does not blink back through a loading state.
+      setData((current) => [...(current ?? []), created.value]);
       setCreateForm(EMPTY_FORM);
-      refetch();
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Failed to create player.");
     }
+    // On failure the form keeps every entered value, so it can be corrected.
   }
 
   function startEdit(player: PlayerAdmin) {
     setEditingId(player.id);
-    setEditError(null);
     setEditForm({
       username: player.username,
+      slug: player.slug,
+      biography: player.biography ?? "",
       discord_id: player.discord_id ?? "",
       is_active: player.is_active,
       initial_elo_rating: String(player.initial_elo_rating),
@@ -69,13 +91,16 @@ export default function AdminPlayersPage() {
   async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingId) return;
-    setEditError(null);
-    try {
-      await api.players.update(editingId, toPlayerInput(editForm));
+    const updated = await mutation.run(
+      `edit:${editingId}`,
+      () => api.players.update(editingId, toUpdateInput(editForm)),
+      "Player saved.",
+    );
+    if (updated.ok) {
+      setData((current) =>
+        (current ?? []).map((p) => (p.id === updated.value.id ? updated.value : p)),
+      );
       setEditingId(null);
-      refetch();
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "Failed to update player.");
     }
   }
 
@@ -83,18 +108,17 @@ export default function AdminPlayersPage() {
     if (!window.confirm(`Delete player "${player.username}"? This cannot be undone.`)) {
       return;
     }
-    setRowError(null);
-    try {
-      await api.players.delete(player.id);
-      refetch();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "Failed to delete player.");
+    const key = `delete:${player.id}`;
+    const done = await mutation.run(key, () => api.players.delete(player.id), "Player deleted.");
+    if (done.ok) {
+      setData((current) => (current ?? []).filter((p) => p.id !== player.id));
     }
   }
 
   return (
     <div className="admin-players-page">
       <h1>Manage Players</h1>
+      <SaveStatus success={mutation.success} />
 
       <section>
         <h2>New Player</h2>
@@ -111,6 +135,33 @@ export default function AdminPlayersPage() {
             />
           </div>
           <div className="admin-form__row">
+            <label htmlFor="create-slug">URL slug</label>
+            <input
+              id="create-slug"
+              value={createForm.slug}
+              onChange={(event) => setCreateForm({ ...createForm, slug: event.target.value })}
+              maxLength={64}
+              placeholder="derived from the username"
+            />
+            <p className="admin-form__hint">
+              The player&apos;s public address, as in <code>/player/psykick</code>. Leave blank to
+              derive it from the username. Changing it later breaks existing links.
+            </p>
+          </div>
+          <div className="admin-form__row">
+            <label htmlFor="create-biography">Biography</label>
+            <textarea
+              id="create-biography"
+              rows={4}
+              maxLength={4000}
+              value={createForm.biography}
+              onChange={(event) => setCreateForm({ ...createForm, biography: event.target.value })}
+            />
+            <p className="admin-form__hint">
+              Plain text, shown near the top of their profile. Line breaks are kept.
+            </p>
+          </div>
+          <div className="admin-form__row">
             <label htmlFor="create-discord">Discord ID</label>
             <input
               id="create-discord"
@@ -118,6 +169,7 @@ export default function AdminPlayersPage() {
               onChange={(event) => setCreateForm({ ...createForm, discord_id: event.target.value })}
               maxLength={32}
             />
+            <p className="admin-form__hint">Private. Never shown on the public site.</p>
           </div>
           <div className="admin-form__row">
             <label htmlFor="create-elo">Starting Elo</label>
@@ -147,13 +199,13 @@ export default function AdminPlayersPage() {
               Active
             </label>
           </div>
-          {createError && (
+          {mutation.errorFor("create") && (
             <p role="alert" className="admin-form__error">
-              {createError}
+              {mutation.errorFor("create")}
             </p>
           )}
-          <button type="submit" className="admin-form__submit">
-            Create player
+          <button type="submit" className="admin-form__submit" disabled={mutation.isPending("create")}>
+            {mutation.isPending("create") ? "Creating..." : "Create player"}
           </button>
         </form>
       </section>
@@ -166,17 +218,13 @@ export default function AdminPlayersPage() {
             {error}
           </p>
         )}
-        {rowError && (
-          <p role="alert" className="admin-page__error">
-            {rowError}
-          </p>
-        )}
 
         {!isLoading && !error && players && (
           <table className="players-table">
             <thead>
               <tr>
                 <th>Username</th>
+                <th>Slug</th>
                 <th>Discord ID</th>
                 <th>Starting Elo</th>
                 <th>Current Elo</th>
@@ -188,7 +236,7 @@ export default function AdminPlayersPage() {
               {players.map((player) =>
                 editingId === player.id ? (
                   <tr key={player.id}>
-                    <td colSpan={6}>
+                    <td colSpan={7}>
                       <form className="admin-form admin-form--inline" onSubmit={handleSaveEdit}>
                         <input
                           aria-label="Username"
@@ -197,6 +245,12 @@ export default function AdminPlayersPage() {
                           minLength={2}
                           maxLength={32}
                           required
+                        />
+                        <input
+                          aria-label="URL slug"
+                          value={editForm.slug}
+                          onChange={(event) => setEditForm({ ...editForm, slug: event.target.value })}
+                          maxLength={64}
                         />
                         <input
                           aria-label="Discord ID"
@@ -222,13 +276,23 @@ export default function AdminPlayersPage() {
                           />
                           Active
                         </label>
-                        <button type="submit">Save</button>
+                        <textarea
+                          aria-label="Biography"
+                          rows={3}
+                          maxLength={4000}
+                          placeholder="Biography"
+                          value={editForm.biography}
+                          onChange={(event) => setEditForm({ ...editForm, biography: event.target.value })}
+                        />
+                        <button type="submit" disabled={mutation.isPending(`edit:${player.id}`)}>
+                          {mutation.isPending(`edit:${player.id}`) ? "Saving..." : "Save"}
+                        </button>
                         <button type="button" onClick={() => setEditingId(null)}>
                           Cancel
                         </button>
-                        {editError && (
+                        {mutation.errorFor(`edit:${player.id}`) && (
                           <p role="alert" className="admin-form__error">
-                            {editError}
+                            {mutation.errorFor(`edit:${player.id}`)}
                           </p>
                         )}
                       </form>
@@ -237,6 +301,9 @@ export default function AdminPlayersPage() {
                 ) : (
                   <tr key={player.id}>
                     <td>{player.username}</td>
+                    <td>
+                      <code>{player.slug}</code>
+                    </td>
                     <td>{player.discord_id ?? "-"}</td>
                     <td>{player.initial_elo_rating}</td>
                     <td>{player.elo_rating}</td>
@@ -249,9 +316,18 @@ export default function AdminPlayersPage() {
                       <button type="button" onClick={() => startEdit(player)}>
                         Edit
                       </button>
-                      <button type="button" onClick={() => handleDelete(player)}>
-                        Delete
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(player)}
+                        disabled={mutation.isPending(`delete:${player.id}`)}
+                      >
+                        {mutation.isPending(`delete:${player.id}`) ? "Deleting..." : "Delete"}
                       </button>
+                      {mutation.errorFor(`delete:${player.id}`) && (
+                        <p role="alert" className="admin-form__error">
+                          {mutation.errorFor(`delete:${player.id}`)}
+                        </p>
+                      )}
                     </td>
                   </tr>
                 ),

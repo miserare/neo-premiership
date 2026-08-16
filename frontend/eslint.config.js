@@ -36,5 +36,10 @@ export default tseslint.config(
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
     },
+    rules: {
+      // Test helpers are never hot-reloaded, so the rule that keeps component
+      // modules refresh-friendly has nothing to protect here.
+      "react-refresh/only-export-components": "off",
+    },
   },
 );

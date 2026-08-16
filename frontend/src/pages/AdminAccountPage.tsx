@@ -1,8 +1,11 @@
 import { type FormEvent, useState } from "react";
 
+import SaveStatus from "../components/SaveStatus";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { api, ApiError } from "../lib/api";
 
 export default function AdminAccountPage() {
+  useDocumentTitle("Admin Account");
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -52,6 +55,9 @@ export default function AdminAccountPage() {
     setError(null);
     try {
       await api.admin.logoutEverywhere();
+      // A full reload, deliberately: every session has just been revoked, so
+      // the point is to discard all in-memory state rather than to re-render.
+      // Ordinary saves elsewhere never do this.
       window.location.assign("/admin");
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Could not sign out.");
@@ -104,12 +110,7 @@ export default function AdminAccountPage() {
               required
             />
           </div>
-          {error && (
-            <p role="alert" className="admin-form__error">
-              {error}
-            </p>
-          )}
-          {notice && <p className="admin-form__saved">{notice}</p>}
+          <SaveStatus success={notice} error={error} />
           <button type="submit" className="admin-form__submit" disabled={isSubmitting}>
             {isSubmitting ? "Changing..." : "Change password"}
           </button>

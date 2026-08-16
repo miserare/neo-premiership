@@ -1,7 +1,10 @@
 import { type FormEvent, useEffect, useState } from "react";
 
+import SaveStatus from "../components/SaveStatus";
 import { useAsync } from "../hooks/useAsync";
-import { api, ApiError } from "../lib/api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMutation } from "../hooks/useMutation";
+import { api } from "../lib/api";
 import type { PlayoffRound, SeasonSummary } from "../types";
 
 /** Manage a season's playoff rounds.
@@ -12,6 +15,7 @@ import type { PlayoffRound, SeasonSummary } from "../types";
  * ordered list to one transactional endpoint rather than a position at a time.
  */
 export default function AdminPlayoffRoundsPage() {
+  useDocumentTitle("Admin Playoff Rounds");
   const { data: seasons } = useAsync<SeasonSummary[]>(() => api.seasons.list({ limit: 500 }), []);
   const [seasonId, setSeasonId] = useState("");
 
@@ -25,55 +29,56 @@ export default function AdminPlayoffRoundsPage() {
     data: rounds,
     isLoading,
     error,
-    refetch,
+    setData,
   } = useAsync<PlayoffRound[]>(
     () => (seasonId ? api.seasons.playoffRounds.list(seasonId) : Promise.resolve([])),
     [seasonId],
   );
 
+  const mutation = useMutation();
   const [newLabel, setNewLabel] = useState("");
-  const [createError, setCreateError] = useState<string | null>(null);
-  const [actionError, setActionError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [localError, setLocalError] = useState<string | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingLabel, setEditingLabel] = useState("");
-  // Announced to screen readers after a move, because the visible change is a
-  // row swapping places - easy to miss without sight of the list.
-  const [status, setStatus] = useState("");
 
   const ordered = rounds ?? [];
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCreateError(null);
-    if (!newLabel.trim()) {
-      setCreateError("A round needs a name.");
+    setLocalError(null);
+    const label = newLabel.trim();
+    if (!label) {
+      setLocalError("A round needs a name.");
       return;
     }
-    try {
-      await api.seasons.playoffRounds.create(seasonId, { label: newLabel.trim() });
+    const created = await mutation.run(
+      "create",
+      () => api.seasons.playoffRounds.create(seasonId, { label }),
+      `Added ${label} to the end of the bracket.`,
+    );
+    if (created.ok) {
+      setData((current) => [...(current ?? []), created.value]);
       setNewLabel("");
-      setStatus(`Added ${newLabel.trim()} to the end of the bracket.`);
-      refetch();
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Failed to create the round.");
     }
   }
 
   async function handleRename(round: PlayoffRound) {
-    setActionError(null);
+    setLocalError(null);
     const label = editingLabel.trim();
     if (!label) {
-      setActionError("A round needs a name.");
+      setLocalError("A round needs a name.");
       return;
     }
-    try {
-      await api.seasons.playoffRounds.rename(seasonId, round.id, label);
+    const renamed = await mutation.run(
+      `rename:${round.id}`,
+      () => api.seasons.playoffRounds.rename(seasonId, round.id, label),
+      `Renamed to ${label}. Its position is unchanged.`,
+    );
+    if (renamed.ok) {
+      setData((current) =>
+        (current ?? []).map((r) => (r.id === renamed.value.id ? renamed.value : r)),
+      );
       setEditingId(null);
-      setStatus(`Renamed to ${label}. Its position is unchanged.`);
-      refetch();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Failed to rename the round.");
     }
   }
 
@@ -84,31 +89,33 @@ export default function AdminPlayoffRoundsPage() {
     const next = [...ordered];
     [next[index], next[target]] = [next[target], next[index]];
 
-    setActionError(null);
-    setBusy(true);
-    try {
-      await api.seasons.playoffRounds.reorder(
-        seasonId,
-        next.map((round) => round.id),
-      );
-      setStatus(`${ordered[index].label} is now round ${target + 1} of ${ordered.length}.`);
-      refetch();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Failed to reorder the rounds.");
-    } finally {
-      setBusy(false);
+    setLocalError(null);
+    const reordered = await mutation.run(
+      `move:${ordered[index].id}`,
+      () =>
+        api.seasons.playoffRounds.reorder(
+          seasonId,
+          next.map((round) => round.id),
+        ),
+      `${ordered[index].label} is now round ${target + 1} of ${ordered.length}.`,
+    );
+    if (reordered.ok) {
+      // The endpoint returns the whole reordered list, so the local copy is
+      // replaced from the response rather than refetched.
+      setData(reordered.value);
     }
   }
 
   async function handleDelete(round: PlayoffRound) {
-    setActionError(null);
+    setLocalError(null);
     if (!window.confirm(`Delete the round "${round.label}"?`)) return;
-    try {
-      await api.seasons.playoffRounds.remove(seasonId, round.id);
-      setStatus(`Deleted ${round.label}.`);
-      refetch();
-    } catch (err) {
-      setActionError(err instanceof ApiError ? err.message : "Failed to delete the round.");
+    const done = await mutation.run(
+      `delete:${round.id}`,
+      () => api.seasons.playoffRounds.remove(seasonId, round.id),
+      `Deleted ${round.label}.`,
+    );
+    if (done.ok) {
+      setData((current) => (current ?? []).filter((r) => r.id !== round.id));
     }
   }
 
@@ -128,7 +135,8 @@ export default function AdminPlayoffRoundsPage() {
           onChange={(event) => {
             setSeasonId(event.target.value);
             setEditingId(null);
-            setStatus("");
+            setLocalError(null);
+            mutation.reset();
           }}
         >
           {(seasons ?? []).map((season) => (
@@ -157,13 +165,13 @@ export default function AdminPlayoffRoundsPage() {
                 New rounds are added at the end. Use Move earlier to place one differently.
               </p>
             </div>
-            {createError && (
+            {(mutation.errorFor("create") || localError) && (
               <p role="alert" className="admin-form__error">
-                {createError}
+                {mutation.errorFor("create") ?? localError}
               </p>
             )}
-            <button type="submit" className="admin-form__submit">
-              Add round
+            <button type="submit" className="admin-form__submit" disabled={mutation.isPending("create")}>
+              {mutation.isPending("create") ? "Adding..." : "Add round"}
             </button>
           </form>
         </section>
@@ -177,14 +185,9 @@ export default function AdminPlayoffRoundsPage() {
             {error}
           </p>
         )}
-        {actionError && (
-          <p role="alert" className="admin-page__error">
-            {actionError}
-          </p>
-        )}
-        <p role="status" className="admin-rounds-page__status">
-          {status}
-        </p>
+        {/* The visible change after a move is a row swapping places, which is
+            easy to miss without sight of the list - so it is announced. */}
+        <SaveStatus success={mutation.success} />
 
         {!isLoading && !error && ordered.length === 0 && (
           <p>
@@ -227,8 +230,12 @@ export default function AdminPlayoffRoundsPage() {
                 <div className="admin-round-row__actions">
                   {editingId === round.id ? (
                     <>
-                      <button type="button" onClick={() => void handleRename(round)}>
-                        Save name
+                      <button
+                        type="button"
+                        onClick={() => void handleRename(round)}
+                        disabled={mutation.isPending(`rename:${round.id}`)}
+                      >
+                        {mutation.isPending(`rename:${round.id}`) ? "Saving..." : "Save name"}
                       </button>
                       <button type="button" onClick={() => setEditingId(null)}>
                         Cancel
@@ -238,7 +245,7 @@ export default function AdminPlayoffRoundsPage() {
                     <>
                       <button
                         type="button"
-                        disabled={busy || index === 0}
+                        disabled={mutation.isBusy || index === 0}
                         onClick={() => void move(index, -1)}
                       >
                         Move earlier
@@ -246,7 +253,7 @@ export default function AdminPlayoffRoundsPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={busy || index === ordered.length - 1}
+                        disabled={mutation.isBusy || index === ordered.length - 1}
                         onClick={() => void move(index, 1)}
                       >
                         Move later
@@ -264,7 +271,7 @@ export default function AdminPlayoffRoundsPage() {
                       </button>
                       <button
                         type="button"
-                        disabled={round.match_count > 0}
+                        disabled={round.match_count > 0 || mutation.isPending(`delete:${round.id}`)}
                         title={
                           round.match_count > 0
                             ? "Move or delete this round's matches before deleting it."
@@ -275,6 +282,15 @@ export default function AdminPlayoffRoundsPage() {
                         Delete
                         <span className="visually-hidden"> {round.label}</span>
                       </button>
+                      {(mutation.errorFor(`delete:${round.id}`) ||
+                        mutation.errorFor(`move:${round.id}`) ||
+                        mutation.errorFor(`rename:${round.id}`)) && (
+                        <p role="alert" className="admin-form__error">
+                          {mutation.errorFor(`delete:${round.id}`) ??
+                            mutation.errorFor(`move:${round.id}`) ??
+                            mutation.errorFor(`rename:${round.id}`)}
+                        </p>
+                      )}
                     </>
                   )}
                 </div>

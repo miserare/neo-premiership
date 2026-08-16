@@ -1751,3 +1751,44 @@ table,
   margin: 0;
   font-size: 0.85rem;
 }
+
+/* ========================== Admin: save feedback ======================== */
+
+/* Always present in the DOM, even when empty. A live region added at the same
+   moment as its text is often not announced at all - the region has to exist
+   first, and the content change is what gets read. */
+.save-status {
+  margin: var(--s2) 0;
+  font-size: 0.85rem;
+}
+
+.save-status--success:empty {
+  display: none;
+}
+
+.save-status--success {
+  color: var(--win);
+}
+
+.save-status--error {
+  color: var(--loss);
+}
+
+/* ========================= Admin: result entry =========================== */
+
+.admin-form__label {
+  display: block;
+  font-weight: 600;
+  font-size: 0.85rem;
+  margin-bottom: var(--s2);
+}
+
+/* The score and winner the games imply, shown before saving so what will be
+   recorded is visible rather than inferred. */
+.admin-result-form__derived {
+  padding: var(--s2) var(--s3);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.9rem;
+}

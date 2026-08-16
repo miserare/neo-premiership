@@ -3,14 +3,17 @@ import { Link, useParams } from "react-router-dom";
 
 import PokemonPicker from "../components/PokemonPicker";
 import PokemonTeam from "../components/PokemonTeam";
+import SaveStatus from "../components/SaveStatus";
 import { useAsync } from "../hooks/useAsync";
-import { api, ApiError } from "../lib/api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMutation } from "../hooks/useMutation";
+import { api } from "../lib/api";
 import type { Player, PokemonInput, RosterChangeType, SeasonEntryRead } from "../types";
 
 interface DraftPoolEditorProps {
   seasonId: string;
   entry: SeasonEntryRead;
-  onSaved: () => void;
+  onSaved: (updated: SeasonEntryRead) => void;
 }
 
 function DraftPoolEditor({ seasonId, entry, onSaved }: DraftPoolEditorProps) {
@@ -21,23 +24,23 @@ function DraftPoolEditor({ seasonId, entry, onSaved }: DraftPoolEditorProps) {
     entry.former_pokemon.length > 0 ? "free_agency" : "draft",
   );
   const [effectiveAt, setEffectiveAt] = useState("");
-  const [error, setError] = useState<string | null>(null);
-  const [isSaving, setIsSaving] = useState(false);
+  const mutation = useMutation();
 
   async function save() {
-    setError(null);
-    setIsSaving(true);
-    try {
-      await api.seasons.roster.setPokemon(seasonId, entry.id, {
-        pokemon: pool,
-        change_type: changeType,
-        ...(effectiveAt ? { effective_at: new Date(effectiveAt).toISOString() } : {}),
-      });
-      onSaved();
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Failed to save drafted Pokémon.");
-    } finally {
-      setIsSaving(false);
+    const saved = await mutation.run(
+      "pool",
+      () =>
+        api.seasons.roster.setPokemon(seasonId, entry.id, {
+          pokemon: pool,
+          change_type: changeType,
+          ...(effectiveAt ? { effective_at: new Date(effectiveAt).toISOString() } : {}),
+        }),
+      "Roster saved.",
+    );
+    if (saved.ok) {
+      // The updated entry comes back from the save, so the parent list is
+      // patched in place and the open editor stays open.
+      onSaved(saved.value);
     }
   }
 
@@ -80,13 +83,14 @@ function DraftPoolEditor({ seasonId, entry, onSaved }: DraftPoolEditorProps) {
           both players.
         </p>
       </div>
-      {error && (
-        <p role="alert" className="admin-form__error">
-          {error}
-        </p>
-      )}
-      <button type="button" className="admin-form__submit" onClick={save} disabled={isSaving}>
-        {isSaving ? "Saving..." : "Save current roster"}
+      <SaveStatus success={mutation.success} />
+      <button
+        type="button"
+        className="admin-form__submit"
+        onClick={save}
+        disabled={mutation.isPending("pool")}
+      >
+        {mutation.isPending("pool") ? "Saving..." : "Save current roster"}
       </button>
       {entry.former_pokemon.length > 0 && (
         <div className="admin-roster-history">
@@ -126,6 +130,7 @@ function toEntryInput(form: EntryFormState) {
 
 export default function AdminSeasonRosterPage() {
   const { seasonId } = useParams<{ seasonId: string }>();
+  useDocumentTitle("Admin Roster");
 
   const {
     data: season,
@@ -136,20 +141,20 @@ export default function AdminSeasonRosterPage() {
     data: roster,
     isLoading: rosterLoading,
     error: rosterError,
-    refetch: refetchRoster,
+    setData: setRoster,
   } = useAsync<SeasonEntryRead[]>(() => api.seasons.roster.list(seasonId!), [seasonId]);
   const { data: players } = useAsync<Player[]>(() => api.players.list({ limit: 500 }), []);
 
+  const mutation = useMutation();
   const [newPlayerId, setNewPlayerId] = useState("");
   const [addForm, setAddForm] = useState<EntryFormState>(EMPTY_ENTRY_FORM);
-  const [addError, setAddError] = useState<string | null>(null);
-
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<EntryFormState>(EMPTY_ENTRY_FORM);
-  const [editError, setEditError] = useState<string | null>(null);
-
-  const [rowError, setRowError] = useState<string | null>(null);
   const [draftingId, setDraftingId] = useState<string | null>(null);
+
+  function replaceEntry(updated: SeasonEntryRead) {
+    setRoster((current) => (current ?? []).map((e) => (e.id === updated.id ? updated : e)));
+  }
 
   const rosterPlayerIds = new Set((roster ?? []).map((entry) => entry.player.id));
   const availablePlayers = (players ?? []).filter((player) => !rosterPlayerIds.has(player.id));
@@ -157,20 +162,20 @@ export default function AdminSeasonRosterPage() {
   async function handleAdd(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!seasonId || !newPlayerId) return;
-    setAddError(null);
-    try {
-      await api.seasons.roster.add(seasonId, { player_id: newPlayerId, ...toEntryInput(addForm) });
+    const added = await mutation.run(
+      "add",
+      () => api.seasons.roster.add(seasonId, { player_id: newPlayerId, ...toEntryInput(addForm) }),
+      "Player added to the roster.",
+    );
+    if (added.ok) {
+      setRoster((current) => [...(current ?? []), added.value]);
       setNewPlayerId("");
       setAddForm(EMPTY_ENTRY_FORM);
-      refetchRoster();
-    } catch (err) {
-      setAddError(err instanceof ApiError ? err.message : "Failed to add player to roster.");
     }
   }
 
   function startEdit(entry: SeasonEntryRead) {
     setEditingId(entry.id);
-    setEditError(null);
     setEditForm({
       group_label: entry.group_label ?? "",
       tiebreaker_value: entry.tiebreaker_value === null ? "" : String(entry.tiebreaker_value),
@@ -180,13 +185,14 @@ export default function AdminSeasonRosterPage() {
   async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!seasonId || !editingId) return;
-    setEditError(null);
-    try {
-      await api.seasons.roster.update(seasonId, editingId, toEntryInput(editForm));
+    const updated = await mutation.run(
+      `edit:${editingId}`,
+      () => api.seasons.roster.update(seasonId, editingId, toEntryInput(editForm)),
+      "Roster entry saved.",
+    );
+    if (updated.ok) {
+      replaceEntry(updated.value);
       setEditingId(null);
-      refetchRoster();
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "Failed to update roster entry.");
     }
   }
 
@@ -195,12 +201,13 @@ export default function AdminSeasonRosterPage() {
     if (!window.confirm(`Remove ${entry.player.username} from the roster?`)) {
       return;
     }
-    setRowError(null);
-    try {
-      await api.seasons.roster.remove(seasonId, entry.id);
-      refetchRoster();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "Failed to remove roster entry.");
+    const done = await mutation.run(
+      `remove:${entry.id}`,
+      () => api.seasons.roster.remove(seasonId, entry.id),
+      "Player removed from the roster.",
+    );
+    if (done.ok) {
+      setRoster((current) => (current ?? []).filter((e) => e.id !== entry.id));
     }
   }
 
@@ -220,11 +227,7 @@ export default function AdminSeasonRosterPage() {
           {error}
         </p>
       )}
-      {rowError && (
-        <p role="alert" className="admin-page__error">
-          {rowError}
-        </p>
-      )}
+      <SaveStatus success={mutation.success} error={mutation.error} />
 
       {!isLoading && !error && (
         <>
@@ -268,13 +271,13 @@ export default function AdminSeasonRosterPage() {
                   onChange={(event) => setAddForm({ ...addForm, tiebreaker_value: event.target.value })}
                 />
               </div>
-              {addError && (
+              {mutation.errorFor("add") && (
                 <p role="alert" className="admin-form__error">
-                  {addError}
+                  {mutation.errorFor("add")}
                 </p>
               )}
-              <button type="submit" className="admin-form__submit">
-                Add to roster
+              <button type="submit" className="admin-form__submit" disabled={mutation.isPending("add")}>
+                {mutation.isPending("add") ? "Adding..." : "Add to roster"}
               </button>
             </form>
           </section>
@@ -315,13 +318,15 @@ export default function AdminSeasonRosterPage() {
                                 setEditForm({ ...editForm, tiebreaker_value: event.target.value })
                               }
                             />
-                            <button type="submit">Save</button>
+                            <button type="submit" disabled={mutation.isPending(`edit:${entry.id}`)}>
+                              {mutation.isPending(`edit:${entry.id}`) ? "Saving..." : "Save"}
+                            </button>
                             <button type="button" onClick={() => setEditingId(null)}>
                               Cancel
                             </button>
-                            {editError && (
+                            {mutation.errorFor(`edit:${entry.id}`) && (
                               <p role="alert" className="admin-form__error">
-                                {editError}
+                                {mutation.errorFor(`edit:${entry.id}`)}
                               </p>
                             )}
                           </form>
@@ -346,21 +351,31 @@ export default function AdminSeasonRosterPage() {
                             >
                               {draftingId === entry.id ? "Close" : "Manage roster"}
                             </button>
-                            <button type="button" onClick={() => handleRemove(entry)}>
-                              Remove
+                            <button
+                              type="button"
+                              onClick={() => handleRemove(entry)}
+                              disabled={mutation.isPending(`remove:${entry.id}`)}
+                            >
+                              {mutation.isPending(`remove:${entry.id}`) ? "Removing..." : "Remove"}
                             </button>
+                            {mutation.errorFor(`remove:${entry.id}`) && (
+                              <p role="alert" className="admin-form__error">
+                                {mutation.errorFor(`remove:${entry.id}`)}
+                              </p>
+                            )}
                           </td>
                         </tr>
                         {draftingId === entry.id && (
                           <tr>
                             <td colSpan={5}>
+                              {/* The editor stays open after a save: the
+                                  updated entry is patched into the list, so
+                                  scroll position and the picker's state
+                                  survive. */}
                               <DraftPoolEditor
                                 seasonId={seasonId!}
                                 entry={entry}
-                                onSaved={() => {
-                                  setDraftingId(null);
-                                  refetchRoster();
-                                }}
+                                onSaved={replaceEntry}
                               />
                             </td>
                           </tr>

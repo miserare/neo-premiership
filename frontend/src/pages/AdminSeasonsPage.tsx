@@ -1,98 +1,115 @@
 import { type FormEvent, useState } from "react";
 import { Link } from "react-router-dom";
 
+import SaveStatus from "../components/SaveStatus";
 import { useAsync } from "../hooks/useAsync";
-import { api, ApiError } from "../lib/api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMutation } from "../hooks/useMutation";
+import { api } from "../lib/api";
 import type { Player, SeasonSummary } from "../types";
 
 interface SeasonFormState {
   name: string;
+  slug: string;
   start_date: string;
   end_date: string;
   champion_id: string;
   overview: string;
+  hall_of_fame_description: string;
   sheet_url: string;
 }
 
 const EMPTY_FORM: SeasonFormState = {
   name: "",
+  slug: "",
   start_date: "",
   end_date: "",
   champion_id: "",
   overview: "",
+  hall_of_fame_description: "",
   sheet_url: "",
 };
 
-function toSeasonInput(form: SeasonFormState) {
+function toCreateInput(form: SeasonFormState) {
   return {
     name: form.name.trim(),
+    // Omitted rather than empty: the server derives it from the name.
+    slug: form.slug.trim() || undefined,
     start_date: form.start_date,
     end_date: form.end_date || null,
     champion_id: form.champion_id || null,
     overview: form.overview.trim() || null,
+    hall_of_fame_description: form.hall_of_fame_description.trim() || null,
     sheet_url: form.sheet_url.trim() || null,
   };
 }
 
+function toUpdateInput(form: SeasonFormState) {
+  const { slug, ...rest } = toCreateInput(form);
+  // An untouched slug is not sent, so renaming a season keeps its URL.
+  return slug ? { ...rest, slug } : rest;
+}
+
 export default function AdminSeasonsPage() {
-  const { data: seasons, isLoading, error, refetch } = useAsync<SeasonSummary[]>(
-    () => api.seasons.list({ limit: 500 }),
-    [],
-  );
+  useDocumentTitle("Admin Seasons");
+  const {
+    data: seasons,
+    isLoading,
+    error,
+    setData,
+  } = useAsync<SeasonSummary[]>(() => api.seasons.list({ limit: 500 }), []);
   const { data: players } = useAsync<Player[]>(() => api.players.list({ limit: 500 }), []);
 
+  const mutation = useMutation();
   const [createForm, setCreateForm] = useState<SeasonFormState>(EMPTY_FORM);
-  const [createError, setCreateError] = useState<string | null>(null);
-
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editForm, setEditForm] = useState<SeasonFormState>(EMPTY_FORM);
-  const [editError, setEditError] = useState<string | null>(null);
-
-  const [rowError, setRowError] = useState<string | null>(null);
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setCreateError(null);
-    try {
-      await api.seasons.create(toSeasonInput(createForm));
+    const created = await mutation.run(
+      "create",
+      () => api.seasons.create(toCreateInput(createForm)),
+      "Season created.",
+    );
+    if (created.ok) {
+      setData((current) => [created.value, ...(current ?? [])]);
       setCreateForm(EMPTY_FORM);
-      refetch();
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Failed to create season.");
     }
   }
 
   async function startEdit(season: SeasonSummary) {
-    setEditError(null);
-    try {
-      const detail = await api.seasons.get(season.id);
-      // Only switch the row into edit mode once the form is actually populated -
-      // otherwise a fast Save click submits an empty/stale editForm (name: "",
-      // start_date: "") before the fetch resolves.
-      setEditForm({
-        name: detail.name,
-        start_date: detail.start_date,
-        end_date: detail.end_date ?? "",
-        champion_id: detail.champion?.id ?? "",
-        overview: detail.overview ?? "",
-        sheet_url: detail.sheet_url ?? "",
-      });
-      setEditingId(season.id);
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "Failed to load season.");
-    }
+    const detail = await mutation.run(`load:${season.id}`, () => api.seasons.get(season.id));
+    if (!detail.ok) return;
+    // Only switch the row into edit mode once the form is actually populated -
+    // otherwise a fast Save click submits an empty/stale editForm (name: "",
+    // start_date: "") before the fetch resolves.
+    setEditForm({
+      name: detail.value.name,
+      slug: detail.value.slug,
+      start_date: detail.value.start_date,
+      end_date: detail.value.end_date ?? "",
+      champion_id: detail.value.champion?.id ?? "",
+      overview: detail.value.overview ?? "",
+      hall_of_fame_description: detail.value.hall_of_fame_description ?? "",
+      sheet_url: detail.value.sheet_url ?? "",
+    });
+    setEditingId(season.id);
   }
 
   async function handleSaveEdit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!editingId) return;
-    setEditError(null);
-    try {
-      await api.seasons.update(editingId, toSeasonInput(editForm));
+    const updated = await mutation.run(
+      `edit:${editingId}`,
+      () => api.seasons.update(editingId, toUpdateInput(editForm)),
+      "Season saved.",
+    );
+    if (updated.ok) {
+      setData((current) =>
+        (current ?? []).map((s) => (s.id === updated.value.id ? updated.value : s)),
+      );
       setEditingId(null);
-      refetch();
-    } catch (err) {
-      setEditError(err instanceof ApiError ? err.message : "Failed to update season.");
     }
   }
 
@@ -102,18 +119,20 @@ export default function AdminSeasonsPage() {
     ) {
       return;
     }
-    setRowError(null);
-    try {
-      await api.seasons.delete(season.id);
-      refetch();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "Failed to delete season.");
+    const done = await mutation.run(
+      `delete:${season.id}`,
+      () => api.seasons.delete(season.id),
+      "Season deleted.",
+    );
+    if (done.ok) {
+      setData((current) => (current ?? []).filter((s) => s.id !== season.id));
     }
   }
 
   return (
     <div className="admin-seasons-page">
       <h1>Manage Seasons</h1>
+      <SaveStatus success={mutation.success} />
 
       <section>
         <h2>New Season</h2>
@@ -128,6 +147,20 @@ export default function AdminSeasonsPage() {
               maxLength={64}
               required
             />
+          </div>
+          <div className="admin-form__row">
+            <label htmlFor="create-season-slug">URL slug</label>
+            <input
+              id="create-season-slug"
+              value={createForm.slug}
+              onChange={(event) => setCreateForm({ ...createForm, slug: event.target.value })}
+              maxLength={64}
+              placeholder="derived from the name"
+            />
+            <p className="admin-form__hint">
+              Used in <code>/seasons/6/standings</code>. Leave blank to derive it - &quot;Season 6&quot;
+              becomes &quot;6&quot;. Any stable value works, such as <code>summer-2027</code>.
+            </p>
           </div>
           <div className="admin-form__row">
             <label htmlFor="create-season-start">Start date</label>
@@ -180,13 +213,28 @@ export default function AdminSeasonsPage() {
               onChange={(event) => setCreateForm({ ...createForm, overview: event.target.value })}
             />
           </div>
-          {createError && (
+          <div className="admin-form__row">
+            <label htmlFor="create-season-hof">Hall of Fame description</label>
+            <textarea
+              id="create-season-hof"
+              maxLength={4000}
+              value={createForm.hall_of_fame_description}
+              onChange={(event) =>
+                setCreateForm({ ...createForm, hall_of_fame_description: event.target.value })
+              }
+            />
+            <p className="admin-form__hint">
+              The championship story shown on the Hall of Fame. Left blank, that page falls back to
+              the overview above and says so.
+            </p>
+          </div>
+          {mutation.errorFor("create") && (
             <p role="alert" className="admin-form__error">
-              {createError}
+              {mutation.errorFor("create")}
             </p>
           )}
-          <button type="submit" className="admin-form__submit">
-            Create season
+          <button type="submit" className="admin-form__submit" disabled={mutation.isPending("create")}>
+            {mutation.isPending("create") ? "Creating..." : "Create season"}
           </button>
         </form>
       </section>
@@ -199,17 +247,12 @@ export default function AdminSeasonsPage() {
             {error}
           </p>
         )}
-        {rowError && (
-          <p role="alert" className="admin-page__error">
-            {rowError}
-          </p>
-        )}
-
         {!isLoading && !error && seasons && (
           <table className="players-table">
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Slug</th>
                 <th>Start</th>
                 <th>End</th>
                 <th>Champion</th>
@@ -220,7 +263,7 @@ export default function AdminSeasonsPage() {
               {seasons.map((season) =>
                 editingId === season.id ? (
                   <tr key={season.id}>
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <form className="admin-form admin-form--inline" onSubmit={handleSaveEdit}>
                         <input
                           aria-label="Name"
@@ -229,6 +272,12 @@ export default function AdminSeasonsPage() {
                           minLength={1}
                           maxLength={64}
                           required
+                        />
+                        <input
+                          aria-label="URL slug"
+                          value={editForm.slug}
+                          onChange={(event) => setEditForm({ ...editForm, slug: event.target.value })}
+                          maxLength={64}
                         />
                         <input
                           aria-label="Start date"
@@ -266,13 +315,24 @@ export default function AdminSeasonsPage() {
                           value={editForm.overview}
                           onChange={(event) => setEditForm({ ...editForm, overview: event.target.value })}
                         />
-                        <button type="submit">Save</button>
+                        <textarea
+                          aria-label="Hall of Fame description"
+                          placeholder="Hall of Fame description"
+                          maxLength={4000}
+                          value={editForm.hall_of_fame_description}
+                          onChange={(event) =>
+                            setEditForm({ ...editForm, hall_of_fame_description: event.target.value })
+                          }
+                        />
+                        <button type="submit" disabled={mutation.isPending(`edit:${season.id}`)}>
+                          {mutation.isPending(`edit:${season.id}`) ? "Saving..." : "Save"}
+                        </button>
                         <button type="button" onClick={() => setEditingId(null)}>
                           Cancel
                         </button>
-                        {editError && (
+                        {mutation.errorFor(`edit:${season.id}`) && (
                           <p role="alert" className="admin-form__error">
-                            {editError}
+                            {mutation.errorFor(`edit:${season.id}`)}
                           </p>
                         )}
                       </form>
@@ -281,17 +341,35 @@ export default function AdminSeasonsPage() {
                 ) : (
                   <tr key={season.id}>
                     <td>{season.name}</td>
+                    <td>
+                      <code>{season.slug}</code>
+                    </td>
                     <td>{season.start_date}</td>
                     <td>{season.end_date ?? "-"}</td>
                     <td>{season.champion?.username ?? "-"}</td>
                     <td className="admin-players-page__actions">
                       <Link to={`/admin/seasons/${season.id}`}>Roster</Link>
-                      <button type="button" onClick={() => startEdit(season)}>
+                      <button
+                        type="button"
+                        onClick={() => startEdit(season)}
+                        disabled={mutation.isPending(`load:${season.id}`)}
+                      >
                         Edit
                       </button>
-                      <button type="button" onClick={() => handleDelete(season)}>
-                        Delete
+                      <button
+                        type="button"
+                        onClick={() => handleDelete(season)}
+                        disabled={mutation.isPending(`delete:${season.id}`)}
+                      >
+                        {mutation.isPending(`delete:${season.id}`) ? "Deleting..." : "Delete"}
                       </button>
+                      {(mutation.errorFor(`delete:${season.id}`) ||
+                        mutation.errorFor(`load:${season.id}`)) && (
+                        <p role="alert" className="admin-form__error">
+                          {mutation.errorFor(`delete:${season.id}`) ??
+                            mutation.errorFor(`load:${season.id}`)}
+                        </p>
+                      )}
                     </td>
                   </tr>
                 ),

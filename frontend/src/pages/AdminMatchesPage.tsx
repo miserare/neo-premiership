@@ -1,11 +1,14 @@
 import { type FormEvent, useEffect, useState } from "react";
 
 import PokemonPicker from "../components/PokemonPicker";
+import SaveStatus from "../components/SaveStatus";
 import { useAsync } from "../hooks/useAsync";
-import { api, ApiError } from "../lib/api";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+import { useMutation } from "../hooks/useMutation";
+import { api } from "../lib/api";
 import type {
-  MatchGameInput,
   MatchRead,
+  MatchResultGameInput,
   MatchStage,
   MatchStatus,
   PlayoffRound,
@@ -50,6 +53,7 @@ const EMPTY_CREATE: CreateFormState = {
 };
 
 export default function AdminMatchesPage() {
+  useDocumentTitle("Admin Matches");
   const { data: seasons } = useAsync<SeasonSummary[]>(() => api.seasons.list({ limit: 500 }), []);
   const [seasonId, setSeasonId] = useState("");
 
@@ -64,7 +68,7 @@ export default function AdminMatchesPage() {
     data: matches,
     isLoading,
     error,
-    refetch,
+    setData,
   } = useAsync<MatchRead[]>(
     () => (seasonId ? api.matches.listBySeason(seasonId) : Promise.resolve([])),
     [seasonId],
@@ -73,19 +77,25 @@ export default function AdminMatchesPage() {
     () => (seasonId ? api.seasons.roster.list(seasonId) : Promise.resolve([])),
     [seasonId],
   );
-  const { data: playoffRounds, refetch: refetchRounds } = useAsync<PlayoffRound[]>(
+  const { data: playoffRounds } = useAsync<PlayoffRound[]>(
     () => (seasonId ? api.seasons.playoffRounds.list(seasonId) : Promise.resolve([])),
     [seasonId],
   );
   // Already in display_order from the API; presented as-is.
   const rounds = playoffRounds ?? [];
 
+  const mutation = useMutation();
   const [createForm, setCreateForm] = useState<CreateFormState>(EMPTY_CREATE);
   const [createError, setCreateError] = useState<string | null>(null);
-  const [rowError, setRowError] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
   const rosterPlayers = (roster ?? []).map((entry) => entry.player);
+
+  /** Patch one match in the list from a save response. The expanded editor
+   * stays open and keeps its scroll position - nothing is refetched. */
+  function replaceMatch(updated: MatchRead) {
+    setData((current) => (current ?? []).map((m) => (m.id === updated.id ? updated : m)));
+  }
 
   async function handleCreate(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -99,28 +109,30 @@ export default function AdminMatchesPage() {
       setCreateError("Choose which playoff round this match belongs to.");
       return;
     }
-    try {
-      await api.matches.create({
-        season_id: seasonId,
-        home_player_id: createForm.home_player_id,
-        away_player_id: createForm.away_player_id,
-        stage: createForm.stage,
-        // The two stages carry different fields, and neither leaks into the
-        // other: a group match never sends a round, a playoff match never
-        // sends a label.
-        playoff_round_id: isPlayoff ? createForm.playoff_round_id : null,
-        bracket_order:
-          isPlayoff && createForm.bracket_order.trim() !== ""
-            ? Number(createForm.bracket_order)
-            : null,
-        round_label: isPlayoff ? null : createForm.round_label.trim() || null,
-        scheduled_at: fromLocalInput(createForm.scheduled_at),
-      });
+    const created = await mutation.run(
+      "create",
+      () =>
+        api.matches.create({
+          season_id: seasonId,
+          home_player_id: createForm.home_player_id,
+          away_player_id: createForm.away_player_id,
+          stage: createForm.stage,
+          // The two stages carry different fields, and neither leaks into the
+          // other: a group match never sends a round, a playoff match never
+          // sends a label.
+          playoff_round_id: isPlayoff ? createForm.playoff_round_id : null,
+          bracket_order:
+            isPlayoff && createForm.bracket_order.trim() !== ""
+              ? Number(createForm.bracket_order)
+              : null,
+          round_label: isPlayoff ? null : createForm.round_label.trim() || null,
+          scheduled_at: fromLocalInput(createForm.scheduled_at),
+        }),
+      "Match created.",
+    );
+    if (created.ok) {
+      setData((current) => [...(current ?? []), created.value]);
       setCreateForm(EMPTY_CREATE);
-      refetch();
-      refetchRounds();
-    } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : "Failed to create match.");
     }
   }
 
@@ -132,19 +144,21 @@ export default function AdminMatchesPage() {
     ) {
       return;
     }
-    setRowError(null);
-    try {
-      await api.matches.delete(match.id);
+    const done = await mutation.run(
+      `delete:${match.id}`,
+      () => api.matches.delete(match.id),
+      "Match deleted.",
+    );
+    if (done.ok) {
       if (expandedId === match.id) setExpandedId(null);
-      refetch();
-    } catch (err) {
-      setRowError(err instanceof ApiError ? err.message : "Failed to delete match.");
+      setData((current) => (current ?? []).filter((m) => m.id !== match.id));
     }
   }
 
   return (
     <div className="admin-matches-page">
       <h1>Manage Matches</h1>
+      <SaveStatus success={mutation.success} />
 
       <div className="admin-form__row admin-matches-page__season-select">
         <label htmlFor="admin-match-season">Season</label>
@@ -292,13 +306,13 @@ export default function AdminMatchesPage() {
                 onChange={(event) => setCreateForm({ ...createForm, scheduled_at: event.target.value })}
               />
             </div>
-            {createError && (
+            {(createError || mutation.errorFor("create")) && (
               <p role="alert" className="admin-form__error">
-                {createError}
+                {createError ?? mutation.errorFor("create")}
               </p>
             )}
-            <button type="submit" className="admin-form__submit">
-              Create match
+            <button type="submit" className="admin-form__submit" disabled={mutation.isPending("create")}>
+              {mutation.isPending("create") ? "Creating..." : "Create match"}
             </button>
           </form>
         </section>
@@ -310,11 +324,6 @@ export default function AdminMatchesPage() {
         {error && (
           <p role="alert" className="admin-page__error">
             {error}
-          </p>
-        )}
-        {rowError && (
-          <p role="alert" className="admin-page__error">
-            {rowError}
           </p>
         )}
 
@@ -336,6 +345,7 @@ export default function AdminMatchesPage() {
                       {match.status}
                       {match.series.game_count > 1 &&
                         ` · ${match.series.home_wins}-${match.series.away_wins}`}
+                      {match.featured_on_homepage && " · featured"}
                     </span>
                   </div>
                   <div className="admin-players-page__actions">
@@ -345,21 +355,23 @@ export default function AdminMatchesPage() {
                     >
                       {expandedId === match.id ? "Close" : "Edit"}
                     </button>
-                    <button type="button" onClick={() => handleDelete(match)}>
-                      Delete
+                    <button
+                      type="button"
+                      onClick={() => handleDelete(match)}
+                      disabled={mutation.isPending(`delete:${match.id}`)}
+                    >
+                      {mutation.isPending(`delete:${match.id}`) ? "Deleting..." : "Delete"}
                     </button>
+                    {mutation.errorFor(`delete:${match.id}`) && (
+                      <p role="alert" className="admin-form__error">
+                        {mutation.errorFor(`delete:${match.id}`)}
+                      </p>
+                    )}
                   </div>
                 </div>
 
                 {expandedId === match.id && (
-                  <MatchEditor
-                    match={match}
-                    playoffRounds={rounds}
-                    onSaved={() => {
-                      refetch();
-                      refetchRounds();
-                    }}
-                  />
+                  <MatchEditor match={match} playoffRounds={rounds} onSaved={replaceMatch} />
                 )}
               </li>
             ))}
@@ -373,272 +385,302 @@ export default function AdminMatchesPage() {
 interface MatchEditorProps {
   match: MatchRead;
   playoffRounds: PlayoffRound[];
-  onSaved: () => void;
+  onSaved: (updated: MatchRead) => void;
 }
 
+function MatchEditor({ match, playoffRounds, onSaved }: MatchEditorProps) {
+  return (
+    <div className="admin-match-card__body">
+      <ScheduleForm match={match} playoffRounds={playoffRounds} onSaved={onSaved} />
+      <ResultForm match={match} onSaved={onSaved} />
+    </div>
+  );
+}
 
-function MatchEditor({
-  match,
-  playoffRounds,
-  onSaved,
-}: MatchEditorProps) {
+/**
+ * Where and when a match is played - everything that is true before it starts.
+ *
+ * Deliberately separate from the result form below, and it never touches games,
+ * teams, scores or the winner: editing a match's group label must not disturb
+ * what the players actually brought.
+ */
+function ScheduleForm({ match, playoffRounds, onSaved }: MatchEditorProps) {
   const isPlayoff = match.stage === "playoffs";
+  const mutation = useMutation();
   const [status, setStatus] = useState<MatchStatus>(match.status);
-  const [winnerId, setWinnerId] = useState(match.winner_id ?? "");
   const [roundLabel, setRoundLabel] = useState(match.round_label ?? "");
   const [playoffRoundId, setPlayoffRoundId] = useState(match.playoff_round_id ?? "");
   const [bracketOrder, setBracketOrder] = useState(
     match.bracket_order === null ? "" : String(match.bracket_order),
   );
   const [scheduledAt, setScheduledAt] = useState(toLocalInput(match.scheduled_at));
-  const [completedAt, setCompletedAt] = useState(toLocalInput(match.completed_at));
-  const [homeScore, setHomeScore] = useState(match.home_score === null ? "" : String(match.home_score));
-  const [awayScore, setAwayScore] = useState(match.away_score === null ? "" : String(match.away_score));
-  const [youtubeUrl, setYoutubeUrl] = useState(match.youtube_url ?? "");
-  const [detailsError, setDetailsError] = useState<string | null>(null);
-  const [detailsSaved, setDetailsSaved] = useState(false);
+  const [featured, setFeatured] = useState(match.featured_on_homepage);
+  const [featureOrder, setFeatureOrder] = useState(
+    match.homepage_feature_order === null ? "" : String(match.homepage_feature_order),
+  );
 
-  const [games, setGames] = useState<MatchGameInput[]>(
-    // A synthesized legacy game still edits like a real one; saving persists it.
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const saved = await mutation.run(
+      "schedule",
+      () =>
+        api.matches.update(match.id, {
+          // Only cancellation and un-cancellation live here; completing a match
+          // is what the result form does, from the games.
+          status,
+          ...(isPlayoff
+            ? {
+                playoff_round_id: playoffRoundId || null,
+                bracket_order: bracketOrder.trim() === "" ? null : Number(bracketOrder),
+              }
+            : { round_label: roundLabel.trim() || null }),
+          scheduled_at: fromLocalInput(scheduledAt),
+          featured_on_homepage: featured,
+          homepage_feature_order:
+            featured && featureOrder.trim() !== "" ? Number(featureOrder) : null,
+        }),
+      "Schedule saved.",
+    );
+    if (saved.ok) onSaved(saved.value);
+  }
+
+  return (
+    <form className="admin-form" onSubmit={save}>
+      <h3>Scheduling</h3>
+      <p className="admin-form__hint">
+        When and where this match sits. Saving here never changes the recorded games or teams.
+      </p>
+      <div className="admin-form__row">
+        <label htmlFor={`status-${match.id}`}>Status</label>
+        <select
+          id={`status-${match.id}`}
+          value={status}
+          onChange={(event) => setStatus(event.target.value as MatchStatus)}
+        >
+          <option value="scheduled">Scheduled</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <p className="admin-form__hint">
+          Use Cancelled for a match that will not be played. Completing a match is done by entering
+          its result below, which derives the score and winner from the games.
+        </p>
+      </div>
+      {isPlayoff ? (
+        <>
+          <div className="admin-form__row">
+            <label htmlFor={`round-${match.id}`}>Playoff round</label>
+            <select
+              id={`round-${match.id}`}
+              value={playoffRoundId}
+              onChange={(event) => setPlayoffRoundId(event.target.value)}
+            >
+              <option value="">Unassigned</option>
+              {playoffRounds.map((round) => (
+                <option key={round.id} value={round.id}>
+                  {round.display_order}. {round.label}
+                </option>
+              ))}
+            </select>
+            <p className="admin-form__hint">
+              Rename a round under Rounds - the name is shared by every match in it.
+            </p>
+          </div>
+          <div className="admin-form__row">
+            <label htmlFor={`slot-${match.id}`}>Position in round</label>
+            <input
+              id={`slot-${match.id}`}
+              type="number"
+              min={1}
+              step={1}
+              value={bracketOrder}
+              onChange={(event) => setBracketOrder(event.target.value)}
+            />
+            <p className="admin-form__hint">Position 1 is the first (top) match of the round.</p>
+          </div>
+        </>
+      ) : (
+        <div className="admin-form__row">
+          <label htmlFor={`round-${match.id}`}>Group label</label>
+          <input
+            id={`round-${match.id}`}
+            value={roundLabel}
+            onChange={(event) => setRoundLabel(event.target.value)}
+            maxLength={64}
+          />
+        </div>
+      )}
+      <div className="admin-form__row">
+        <label htmlFor={`sched-${match.id}`}>Scheduled for</label>
+        <input
+          id={`sched-${match.id}`}
+          type="datetime-local"
+          value={scheduledAt}
+          onChange={(event) => setScheduledAt(event.target.value)}
+        />
+        <p className="admin-form__hint">
+          Decides which league week the home page lists this match in.
+        </p>
+      </div>
+      <div className="admin-form__row admin-form__row--checkbox">
+        <label htmlFor={`feature-${match.id}`}>
+          <input
+            id={`feature-${match.id}`}
+            type="checkbox"
+            checked={featured}
+            onChange={(event) => setFeatured(event.target.checked)}
+          />
+          Feature on the home page
+        </label>
+        <p className="admin-form__hint">
+          A featured match appears on the home page whatever week it falls in, and whether it is
+          scheduled, completed or cancelled.
+        </p>
+      </div>
+      {featured && (
+        <div className="admin-form__row">
+          <label htmlFor={`feature-order-${match.id}`}>Feature position</label>
+          <input
+            id={`feature-order-${match.id}`}
+            type="number"
+            min={1}
+            step={1}
+            value={featureOrder}
+            onChange={(event) => setFeatureOrder(event.target.value)}
+          />
+          <p className="admin-form__hint">
+            1 shows first. Leave blank to place it after the numbered ones.
+          </p>
+        </div>
+      )}
+      <SaveStatus success={mutation.success} error={mutation.error} />
+      <button type="submit" className="admin-form__submit" disabled={mutation.isPending("schedule")}>
+        {mutation.isPending("schedule") ? "Saving..." : "Save scheduling"}
+      </button>
+    </form>
+  );
+}
+
+interface GameDraft {
+  winner_id: string;
+  replay_url: string;
+}
+
+interface ResultFormProps {
+  match: MatchRead;
+  onSaved: (updated: MatchRead) => void;
+}
+
+/**
+ * The whole result, in one form and one save.
+ *
+ * Games, both teams, the completion time and the stream link go to a single
+ * transactional endpoint. The series score and the match winner are *not*
+ * entered - they are derived from the game winners, shown below before saving,
+ * and computed again server-side. That is what makes it impossible for the
+ * recorded score and the recorded games to disagree.
+ */
+function ResultForm({ match, onSaved }: ResultFormProps) {
+  const mutation = useMutation();
+  const [games, setGames] = useState<GameDraft[]>(
+    // A game synthesized from a legacy single replay_url edits like a real one;
+    // saving persists it as a real row.
     match.games.map((game) => ({
-      game_number: game.game_number,
-      winner_id: game.winner_id,
-      replay_url: game.replay_url,
+      winner_id: game.winner_id ?? "",
+      replay_url: game.replay_url ?? "",
     })),
   );
-  const [gamesError, setGamesError] = useState<string | null>(null);
-  const [gamesSaved, setGamesSaved] = useState(false);
-
   const [homeTeam, setHomeTeam] = useState<PokemonInput[]>(
     match.home_team.map((p) => ({ pokeapi_id: p.pokeapi_id, species_name: p.species_name })),
   );
   const [awayTeam, setAwayTeam] = useState<PokemonInput[]>(
     match.away_team.map((p) => ({ pokeapi_id: p.pokeapi_id, species_name: p.species_name })),
   );
-  const [teamError, setTeamError] = useState<string | null>(null);
-  const [teamSaved, setTeamSaved] = useState(false);
+  const [completedAt, setCompletedAt] = useState(toLocalInput(match.completed_at));
+  const [youtubeUrl, setYoutubeUrl] = useState(match.youtube_url ?? "");
+  const [markCompleted, setMarkCompleted] = useState(match.status === "completed");
+  const [localError, setLocalError] = useState<string | null>(null);
 
-  async function saveDetails(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setDetailsError(null);
-    setDetailsSaved(false);
-    try {
-      await api.matches.update(match.id, {
-        status,
-        winner_id: winnerId || null,
-        // A playoff match's name comes from its round; only a group match
-        // carries a label of its own.
-        ...(isPlayoff
-          ? {
-              playoff_round_id: playoffRoundId || null,
-              bracket_order: bracketOrder.trim() === "" ? null : Number(bracketOrder),
-            }
-          : { round_label: roundLabel.trim() || null }),
-        scheduled_at: fromLocalInput(scheduledAt),
-        completed_at: fromLocalInput(completedAt),
-        home_score: homeScore.trim() === "" ? null : Number(homeScore),
-        away_score: awayScore.trim() === "" ? null : Number(awayScore),
-        youtube_url: youtubeUrl.trim() || null,
-      });
-      setDetailsSaved(true);
-      onSaved();
-    } catch (err) {
-      setDetailsError(err instanceof ApiError ? err.message : "Failed to save match.");
-    }
+  // The same derivation the server performs, shown before saving so the
+  // administrator sees what will be recorded.
+  const homeWins = games.filter((game) => game.winner_id === match.home_player.id).length;
+  const awayWins = games.filter((game) => game.winner_id === match.away_player.id).length;
+  const decided = homeWins !== awayWins;
+  const derivedWinner = !decided
+    ? null
+    : homeWins > awayWins
+      ? match.home_player.username
+      : match.away_player.username;
+  const everyGameHasAWinner = games.every((game) => game.winner_id !== "");
+
+  function updateGame(index: number, patch: Partial<GameDraft>) {
+    setGames(games.map((game, i) => (i === index ? { ...game, ...patch } : game)));
   }
 
-  async function saveGames() {
-    setGamesError(null);
-    setGamesSaved(false);
-    try {
-      await api.matches.setGames(
-        match.id,
-        games.map((game, index) => ({
+  async function save() {
+    setLocalError(null);
+    if (markCompleted) {
+      if (games.length === 0) {
+        setLocalError("A completed match needs at least one game.");
+        return;
+      }
+      if (!everyGameHasAWinner) {
+        setLocalError("Every game needs a winner before the match can be completed.");
+        return;
+      }
+      if (!decided) {
+        setLocalError(
+          `This series is level at ${homeWins}-${awayWins}. Add the deciding game, or leave it as still scheduled.`,
+        );
+        return;
+      }
+      if (!completedAt) {
+        setLocalError("A completed match needs a completion time - it sets the Elo order.");
+        return;
+      }
+    }
+
+    const payload = {
+      status: markCompleted ? ("completed" as const) : ("scheduled" as const),
+      completed_at: markCompleted ? fromLocalInput(completedAt) : null,
+      // Numbered automatically from their position, so removing game 2 of three
+      // renumbers the rest rather than leaving a gap.
+      games: games
+        .filter((game) => game.winner_id !== "")
+        .map<MatchResultGameInput>((game, index) => ({
           game_number: index + 1,
-          winner_id: game.winner_id || null,
-          replay_url: game.replay_url?.trim() || null,
+          winner_id: game.winner_id,
+          replay_url: game.replay_url.trim() || null,
         })),
-      );
-      setGamesSaved(true);
-      onSaved();
-    } catch (err) {
-      setGamesError(err instanceof ApiError ? err.message : "Failed to save games.");
-    }
-  }
+      home_team: homeTeam,
+      away_team: awayTeam,
+      youtube_url: youtubeUrl.trim() || null,
+    };
 
-  async function saveTeams() {
-    setTeamError(null);
-    setTeamSaved(false);
-    try {
-      await api.matches.setTeam(match.id, match.home_player.id, homeTeam);
-      await api.matches.setTeam(match.id, match.away_player.id, awayTeam);
-      setTeamSaved(true);
-      onSaved();
-    } catch (err) {
-      setTeamError(err instanceof ApiError ? err.message : "Failed to save teams.");
-    }
+    const saved = await mutation.run("result", () => api.matches.setResult(match.id, payload), "Result saved.");
+    if (saved.ok) onSaved(saved.value);
   }
 
   return (
-    <div className="admin-match-card__body">
-      <form className="admin-form" onSubmit={saveDetails}>
-        <h3>Result &amp; schedule</h3>
-        <div className="admin-form__row">
-          <label htmlFor={`status-${match.id}`}>Status</label>
-          <select
-            id={`status-${match.id}`}
-            value={status}
-            onChange={(event) => setStatus(event.target.value as MatchStatus)}
-          >
-            <option value="scheduled">Scheduled</option>
-            <option value="completed">Completed</option>
-            <option value="cancelled">Cancelled</option>
-          </select>
-        </div>
-        <div className="admin-form__row">
-          <label htmlFor={`winner-${match.id}`}>Winner</label>
-          <select
-            id={`winner-${match.id}`}
-            value={winnerId}
-            onChange={(event) => setWinnerId(event.target.value)}
-          >
-            <option value="">Undecided</option>
-            <option value={match.home_player.id}>{match.home_player.username}</option>
-            <option value={match.away_player.id}>{match.away_player.username}</option>
-          </select>
-        </div>
-        {isPlayoff ? (
-          <>
-            <div className="admin-form__row">
-              <label htmlFor={`round-${match.id}`}>Playoff round</label>
-              <select
-                id={`round-${match.id}`}
-                value={playoffRoundId}
-                onChange={(event) => setPlayoffRoundId(event.target.value)}
-              >
-                <option value="">Unassigned</option>
-                {playoffRounds.map((round) => (
-                  <option key={round.id} value={round.id}>
-                    {round.display_order}. {round.label}
-                  </option>
-                ))}
-              </select>
-              <p className="admin-form__hint">
-                Rename a round under Rounds - the name is shared by every match in it.
-              </p>
-            </div>
-            <div className="admin-form__row">
-              <label htmlFor={`slot-${match.id}`}>Position in round</label>
-              <input
-                id={`slot-${match.id}`}
-                type="number"
-                min={1}
-                step={1}
-                value={bracketOrder}
-                onChange={(event) => setBracketOrder(event.target.value)}
-              />
-              <p className="admin-form__hint">
-                Position 1 is the first (top) match of the round.
-              </p>
-            </div>
-          </>
-        ) : (
-          <div className="admin-form__row">
-            <label htmlFor={`round-${match.id}`}>Group label</label>
-            <input
-              id={`round-${match.id}`}
-              value={roundLabel}
-              onChange={(event) => setRoundLabel(event.target.value)}
-              maxLength={64}
-            />
-          </div>
-        )}
-        <div className="admin-form__row">
-          <label htmlFor={`sched-${match.id}`}>Scheduled for</label>
-          <input
-            id={`sched-${match.id}`}
-            type="datetime-local"
-            value={scheduledAt}
-            onChange={(event) => setScheduledAt(event.target.value)}
-          />
-        </div>
-        <div className="admin-form__row">
-          <label htmlFor={`done-${match.id}`}>Completed at</label>
-          <input
-            id={`done-${match.id}`}
-            type="datetime-local"
-            value={completedAt}
-            onChange={(event) => setCompletedAt(event.target.value)}
-            required={status === "completed"}
-          />
-          <p className="admin-form__hint">
-            Required for completed matches; this timestamp determines Elo calculation order.
-          </p>
-        </div>
-        <div className="admin-form__row">
-          <label htmlFor={`hs-${match.id}`}>
-            Score ({match.home_player.username} - {match.away_player.username})
-          </label>
-          <div className="admin-score-row">
-            <input
-              id={`hs-${match.id}`}
-              type="number"
-              min={0}
-              value={homeScore}
-              onChange={(event) => setHomeScore(event.target.value)}
-              aria-label={`${match.home_player.username} score`}
-            />
-            <span>-</span>
-            <input
-              type="number"
-              min={0}
-              value={awayScore}
-              onChange={(event) => setAwayScore(event.target.value)}
-              aria-label={`${match.away_player.username} score`}
-            />
-          </div>
-          <p className="admin-form__hint">
-            Leave blank for a multi-game series - its score comes from the games below.
-          </p>
-        </div>
-        <div className="admin-form__row">
-          <label htmlFor={`yt-${match.id}`}>Video (YouTube) URL</label>
-          <input
-            id={`yt-${match.id}`}
-            type="url"
-            value={youtubeUrl}
-            onChange={(event) => setYoutubeUrl(event.target.value)}
-          />
-        </div>
-        {detailsError && (
-          <p role="alert" className="admin-form__error">
-            {detailsError}
-          </p>
-        )}
-        {detailsSaved && <p className="admin-form__saved">Saved.</p>}
-        <button type="submit" className="admin-form__submit">
-          Save result
-        </button>
-      </form>
+    <div className="admin-form admin-result-form">
+      <h3>{match.status === "completed" ? "Edit result" : "Enter result"}</h3>
+      <p className="admin-form__hint">
+        Games, teams and the stream link are saved together in one operation. The series score and
+        the winner are worked out from the games below - there is nothing to type twice.
+      </p>
 
-      <div className="admin-form">
-        <h3>Games &amp; replays</h3>
-        <p className="admin-form__hint">
-          One row per game. A best-of-three has three rows, each with its own replay link.
-        </p>
+      <div className="admin-form__row">
+        <span className="admin-form__label">Games</span>
+        {games.length === 0 && <p className="admin-form__hint">No games recorded yet.</p>}
         {games.map((game, index) => (
           <div key={index} className="admin-game-row">
             <span className="admin-game-row__number">G{index + 1}</span>
             <select
               aria-label={`Game ${index + 1} winner`}
-              value={game.winner_id ?? ""}
-              onChange={(event) => {
-                const next = [...games];
-                next[index] = { ...game, winner_id: event.target.value || null };
-                setGames(next);
-              }}
+              value={game.winner_id}
+              onChange={(event) => updateGame(index, { winner_id: event.target.value })}
             >
-              <option value="">Undecided</option>
+              <option value="">Winner...</option>
               <option value={match.home_player.id}>{match.home_player.username}</option>
               <option value={match.away_player.id}>{match.away_player.username}</option>
             </select>
@@ -646,70 +688,109 @@ function MatchEditor({
               aria-label={`Game ${index + 1} replay URL`}
               type="url"
               placeholder="Replay URL"
-              value={game.replay_url ?? ""}
-              onChange={(event) => {
-                const next = [...games];
-                next[index] = { ...game, replay_url: event.target.value };
-                setGames(next);
-              }}
+              value={game.replay_url}
+              onChange={(event) => updateGame(index, { replay_url: event.target.value })}
             />
             <button type="button" onClick={() => setGames(games.filter((_, i) => i !== index))}>
               Remove
+              <span className="visually-hidden"> game {index + 1}</span>
             </button>
           </div>
         ))}
-        <div className="admin-match-card__actions">
-          <button
-            type="button"
-            onClick={() =>
-              setGames([...games, { game_number: games.length + 1, winner_id: null, replay_url: "" }])
-            }
-            disabled={games.length >= 9}
-          >
-            Add game
-          </button>
-          <button type="button" className="admin-form__submit" onClick={saveGames}>
-            Save games
-          </button>
-        </div>
-        {gamesError && (
-          <p role="alert" className="admin-form__error">
-            {gamesError}
-          </p>
-        )}
-        {gamesSaved && <p className="admin-form__saved">Saved.</p>}
-      </div>
-
-      <div className="admin-form">
-        <h3>Teams brought</h3>
-        <p className="admin-form__hint">
-          Any Pokémon can be recorded here, whether or not the roster says the player owned
-          it at the time. This is a record of what was actually brought, so substitutions,
-          corrections and one-off rulings can be entered as they happened. Saved match teams
-          are permanent snapshots and are never changed by a later draft or trade.
-        </p>
-        <PokemonPicker
-          label={`${match.home_player.username} brought`}
-          value={homeTeam}
-          onChange={setHomeTeam}
-          max={6}
-        />
-        <PokemonPicker
-          label={`${match.away_player.username} brought`}
-          value={awayTeam}
-          onChange={setAwayTeam}
-          max={6}
-        />
-        {teamError && (
-          <p role="alert" className="admin-form__error">
-            {teamError}
-          </p>
-        )}
-        {teamSaved && <p className="admin-form__saved">Saved.</p>}
-        <button type="button" className="admin-form__submit" onClick={saveTeams}>
-          Save teams
+        <button
+          type="button"
+          onClick={() => setGames([...games, { winner_id: "", replay_url: "" }])}
+          disabled={games.length >= 9}
+        >
+          Add game
         </button>
       </div>
+
+      <p className="admin-result-form__derived" role="status">
+        <strong>Series:</strong> {match.home_player.username} {homeWins} - {awayWins}{" "}
+        {match.away_player.username}
+        {" · "}
+        <strong>Winner:</strong>{" "}
+        {games.length === 0
+          ? "no games yet"
+          : derivedWinner ?? `level at ${homeWins}-${awayWins}, so not decided`}
+      </p>
+
+      <PokemonPicker
+        label={`${match.home_player.username} brought`}
+        value={homeTeam}
+        onChange={setHomeTeam}
+        max={6}
+      />
+      <PokemonPicker
+        label={`${match.away_player.username} brought`}
+        value={awayTeam}
+        onChange={setAwayTeam}
+        max={6}
+      />
+      <p className="admin-form__hint">
+        Any Pokémon can be recorded here, whether or not the roster says the player owned it at the
+        time. This is a record of what was actually brought, so substitutions, corrections and
+        one-off rulings can be entered as they happened.
+      </p>
+
+      <div className="admin-form__row">
+        <label htmlFor={`result-yt-${match.id}`}>Video (YouTube) URL</label>
+        <input
+          id={`result-yt-${match.id}`}
+          type="url"
+          value={youtubeUrl}
+          onChange={(event) => setYoutubeUrl(event.target.value)}
+        />
+      </div>
+
+      <div className="admin-form__row admin-form__row--checkbox">
+        <label htmlFor={`result-complete-${match.id}`}>
+          <input
+            id={`result-complete-${match.id}`}
+            type="checkbox"
+            checked={markCompleted}
+            onChange={(event) => setMarkCompleted(event.target.checked)}
+          />
+          This match is complete
+        </label>
+        <p className="admin-form__hint">
+          Leave unticked for a series still in progress: the games are still recorded, but no winner
+          is set and it stays out of Elo.
+        </p>
+      </div>
+
+      {markCompleted && (
+        <div className="admin-form__row">
+          <label htmlFor={`result-done-${match.id}`}>Completed at</label>
+          <input
+            id={`result-done-${match.id}`}
+            type="datetime-local"
+            value={completedAt}
+            onChange={(event) => setCompletedAt(event.target.value)}
+            required
+          />
+          <p className="admin-form__hint">
+            This timestamp determines Elo calculation order. Correcting an earlier result rebuilds
+            every rating after it.
+          </p>
+        </div>
+      )}
+
+      {localError && (
+        <p role="alert" className="admin-form__error">
+          {localError}
+        </p>
+      )}
+      <SaveStatus success={mutation.success} error={mutation.error} />
+      <button
+        type="button"
+        className="admin-form__submit"
+        onClick={save}
+        disabled={mutation.isPending("result")}
+      >
+        {mutation.isPending("result") ? "Saving..." : "Save result"}
+      </button>
     </div>
   );
 }
