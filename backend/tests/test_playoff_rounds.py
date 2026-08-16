@@ -10,6 +10,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match, MatchStage, MatchStatus
+from app.models.match_game import MatchGame
 from app.models.player import Player
 from app.models.playoff_round import PlayoffRound
 from app.models.season import Season
@@ -701,20 +702,19 @@ async def test_standings_elo_streams_and_records_are_unaffected(
         ]
     )
     played = datetime(2024, 3, 1, tzinfo=timezone.utc)
-    db_session.add(
-        Match(
-            season_id=season.id,
-            home_player_id=champ.id,
-            away_player_id=runner.id,
-            winner_id=champ.id,
-            status=MatchStatus.COMPLETED,
-            stage=MatchStage.GROUP,
-            round_label="Group A",
-            completed_at=played,
-            replay_url="https://example.invalid/group-replay",
-            youtube_url="https://example.invalid/group-video",
-        )
+    group_match = Match(
+        season_id=season.id,
+        home_player_id=champ.id,
+        away_player_id=runner.id,
+        winner_id=champ.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+        round_label="Group A",
+        completed_at=played,
+        replay_url="https://example.invalid/group-replay",
+        youtube_url="https://example.invalid/group-video",
     )
+    db_session.add(group_match)
     final = await _round(db_session, season, "Final", 1)
     final_match = Match(
         season_id=season.id,
@@ -730,6 +730,25 @@ async def test_standings_elo_streams_and_records_are_unaffected(
         youtube_url="https://example.invalid/final-video",
     )
     db_session.add(final_match)
+    await db_session.flush()
+    db_session.add_all(
+        [
+                MatchGame(
+                    match_id=group_match.id,
+                    game_number=1,
+                    winner_id=champ.id,
+                    completed_at=played,
+                    replay_url="https://example.invalid/group-replay",
+                ),
+                MatchGame(
+                    match_id=final_match.id,
+                    game_number=1,
+                    winner_id=champ.id,
+                    completed_at=played + timedelta(days=30),
+                    replay_url="https://example.invalid/final-replay",
+                ),
+        ]
+    )
     await db_session.commit()
 
     # Ratings are rebuilt on every match write, so put one write through the

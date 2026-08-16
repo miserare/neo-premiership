@@ -1,12 +1,13 @@
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
 from app.models.elo import EloRatingEvent
 from app.models.match import Match, MatchStatus
+from app.models.match_game import MatchGame
 from app.models.player import Player
 
 ELO_K_FACTOR = 64
@@ -52,30 +53,40 @@ async def recalculate_elo_ratings(db: AsyncSession) -> None:
 
     await db.execute(delete(EloRatingEvent))
 
-    match_result = await db.execute(
-        select(Match)
+    game_result = await db.execute(
+        select(MatchGame)
+        .join(Match, Match.id == MatchGame.match_id)
         .where(
             Match.status == MatchStatus.COMPLETED,
-            Match.winner_id.is_not(None),
-            Match.completed_at.is_not(None),
+            MatchGame.winner_id.is_not(None),
         )
-        .order_by(Match.completed_at, Match.id)
+        .options(joinedload(MatchGame.match))
+        .order_by(
+            func.coalesce(MatchGame.completed_at, Match.completed_at).asc().nullslast(),
+            Match.id,
+            MatchGame.game_number,
+            MatchGame.id,
+        )
         .with_for_update()
     )
 
-    for match in match_result.scalars().all():
+    for game in game_result.scalars().all():
+        match = game.match
         home_id = match.home_player_id
         away_id = match.away_player_id
         if home_id not in ratings or away_id not in ratings:
             continue
-        if match.winner_id not in (home_id, away_id):
+        if game.winner_id not in (home_id, away_id):
+            continue
+        occurred_at = game.completed_at or match.completed_at
+        if occurred_at is None:
             continue
 
         home_before = ratings[home_id]
         away_before = ratings[away_id]
         home_expected = expected_score(home_before, away_before)
 
-        if match.winner_id == home_id:
+        if game.winner_id == home_id:
             home_result = 1
             winner_change = _round_rating_change(ELO_K_FACTOR * (1 - home_expected))
             home_change = winner_change
@@ -90,14 +101,14 @@ async def recalculate_elo_ratings(db: AsyncSession) -> None:
         ratings[home_id] = home_after
         ratings[away_id] = away_after
 
-        assert match.completed_at is not None
         db.add_all(
             [
                 EloRatingEvent(
                     match_id=match.id,
+                    match_game_id=game.id,
                     player_id=home_id,
                     opponent_id=away_id,
-                    occurred_at=match.completed_at,
+                    occurred_at=occurred_at,
                     rating_before=home_before,
                     rating_after=home_after,
                     rating_change=home_change,
@@ -106,9 +117,10 @@ async def recalculate_elo_ratings(db: AsyncSession) -> None:
                 ),
                 EloRatingEvent(
                     match_id=match.id,
+                    match_game_id=game.id,
                     player_id=away_id,
                     opponent_id=home_id,
-                    occurred_at=match.completed_at,
+                    occurred_at=occurred_at,
                     rating_before=away_before,
                     rating_after=away_after,
                     rating_change=away_change,
@@ -127,8 +139,17 @@ async def recalculate_elo_ratings(db: AsyncSession) -> None:
 async def get_player_elo_history(db: AsyncSession, player_id: uuid.UUID) -> list[EloRatingEvent]:
     result = await db.execute(
         select(EloRatingEvent)
+        .join(MatchGame, EloRatingEvent.match_game_id == MatchGame.id)
         .where(EloRatingEvent.player_id == player_id)
-        .options(joinedload(EloRatingEvent.opponent))
-        .order_by(EloRatingEvent.occurred_at.desc(), EloRatingEvent.match_id.desc())
+        .options(
+            joinedload(EloRatingEvent.opponent),
+            joinedload(EloRatingEvent.match_game).joinedload(MatchGame.match),
+        )
+        .order_by(
+            EloRatingEvent.occurred_at.desc(),
+            EloRatingEvent.match_id.desc(),
+            MatchGame.game_number.desc(),
+            EloRatingEvent.match_game_id.desc(),
+        )
     )
     return list(result.scalars().all())

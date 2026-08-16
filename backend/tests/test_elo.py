@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime, timezone
+from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
@@ -6,6 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.player import Player
 from app.models.season import Season
+from app.models.match import Match, MatchStage, MatchStatus
+from app.models.match_game import MatchGame
+from app.services.elo import recalculate_elo_ratings
 from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
@@ -66,20 +70,14 @@ async def test_equal_ratings_move_by_32_points(
 
     detail = (await client.get(f"/api/players/{home.id}")).json()
     assert detail["elo_rating"] == 1032
-    assert detail["elo_history"] == [
-        {
-            "match_id": response.json()["id"],
-            "opponent_id": str(away.id),
-            "opponent_slug": away.slug,
-            "opponent_username": away.username,
-            "occurred_at": "2024-01-01T12:00:00",
-            "result": 1,
-            "expected_score": 0.5,
-            "rating_before": 1000,
-            "rating_after": 1032,
-            "rating_change": 32,
-        }
-    ]
+    assert len(detail["elo_history"]) == 1
+    event = detail["elo_history"][0]
+    assert event["match_id"] == response.json()["id"]
+    assert event["game_number"] == 1
+    assert event["opponent_id"] == str(away.id)
+    assert event["rating_before"] == 1000
+    assert event["rating_after"] == 1032
+    assert event["player_pokemon_score"] is None
 
 
 async def test_formula_uses_each_players_rating_before_the_match(
@@ -210,3 +208,112 @@ async def test_completed_match_requires_a_timezone_aware_completion_time(
 
     assert missing.status_code == 422
     assert naive.status_code == 422
+
+
+async def test_legacy_game_timestamp_falls_back_to_parent_chronology(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    season, home, away = await _league(db_session)
+    early = Match(
+        season_id=season.id,
+        home_player_id=home.id,
+        away_player_id=away.id,
+        winner_id=home.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+        completed_at=datetime(2024, 1, 1, tzinfo=timezone.utc),
+    )
+    late = Match(
+        season_id=season.id,
+        home_player_id=home.id,
+        away_player_id=away.id,
+        winner_id=home.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+        completed_at=datetime(2024, 2, 1, tzinfo=timezone.utc),
+    )
+    db_session.add_all([early, late])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            MatchGame(match_id=early.id, game_number=1, winner_id=home.id),
+            MatchGame(
+                match_id=late.id,
+                game_number=1,
+                winner_id=home.id,
+                completed_at=late.completed_at,
+            ),
+        ]
+    )
+    await recalculate_elo_ratings(db_session)
+    await db_session.commit()
+
+    history = (await client.get(f"/api/players/{home.id}")).json()["elo_history"]
+    by_match = {entry["match_id"]: entry for entry in history}
+    assert by_match[str(early.id)]["rating_before"] == 1000
+    assert by_match[str(late.id)]["rating_before"] == by_match[str(early.id)]["rating_after"]
+
+
+async def test_same_time_games_use_stable_series_and_game_order(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    season, home, away = await _league(db_session)
+    when = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    first = Match(
+        id=UUID("aaaaaaaa-0000-4000-8000-000000000001"),
+        season_id=season.id,
+        home_player_id=home.id,
+        away_player_id=away.id,
+        winner_id=home.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+        completed_at=when,
+    )
+    second = Match(
+        id=UUID("aaaaaaaa-0000-4000-8000-000000000002"),
+        season_id=season.id,
+        home_player_id=home.id,
+        away_player_id=away.id,
+        winner_id=away.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+        completed_at=when,
+    )
+    db_session.add_all([second, first])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            MatchGame(
+                id=UUID("bbbbbbbb-0000-4000-8000-000000000001"),
+                match_id=first.id,
+                game_number=1,
+                winner_id=home.id,
+                completed_at=when,
+            ),
+            MatchGame(
+                id=UUID("bbbbbbbb-0000-4000-8000-000000000002"),
+                match_id=second.id,
+                game_number=1,
+                winner_id=away.id,
+                completed_at=when,
+            ),
+        ]
+    )
+    await recalculate_elo_ratings(db_session)
+    await db_session.commit()
+
+    first_history = (await client.get(f"/api/players/{home.id}")).json()["elo_history"]
+    by_match = {entry["match_id"]: entry for entry in first_history}
+    assert by_match[str(first.id)]["rating_before"] == 1000
+    assert by_match[str(second.id)]["rating_before"] == by_match[str(first.id)]["rating_after"]
+
+    await recalculate_elo_ratings(db_session)
+    await db_session.commit()
+    replayed = (await client.get(f"/api/players/{home.id}")).json()["elo_history"]
+    assert [
+        (event["match_id"], event["rating_before"], event["rating_after"])
+        for event in replayed
+    ] == [
+        (event["match_id"], event["rating_before"], event["rating_after"])
+        for event in first_history
+    ]

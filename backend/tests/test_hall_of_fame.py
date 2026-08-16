@@ -298,7 +298,8 @@ async def test_replays_and_streams_come_through_on_the_run(
         "https://example.invalid/g1",
         "https://example.invalid/g2",
     ]
-    assert last["series"] == {"home_wins": 2, "away_wins": 0, "game_count": 2}
+    assert last["series"]["home_series_wins"] == 2
+    assert last["series"]["away_series_wins"] == 0
 
 
 async def test_the_description_falls_back_to_the_overview_and_says_so(

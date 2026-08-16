@@ -33,6 +33,7 @@ class PlayerCreate(BaseModel):
     discord_id: str | None = Field(default=None, max_length=32)
     is_active: bool = True
     initial_elo_rating: int | None = Field(default=None, ge=-10_000, le=10_000)
+    is_site_creator: bool = False
 
 
 class PlayerUpdate(BaseModel):
@@ -44,6 +45,7 @@ class PlayerUpdate(BaseModel):
     discord_id: str | None = None
     is_active: bool | None = None
     initial_elo_rating: int | None = Field(default=None, ge=-10_000, le=10_000)
+    is_site_creator: bool | None = None
 
 
 # -------------------------------------------------------------- public models
@@ -113,6 +115,8 @@ class PlayerSeasonRecord(BaseModel):
 
 class EloRatingHistoryEntry(BaseModel):
     match_id: uuid.UUID
+    match_game_id: uuid.UUID
+    game_number: int
     opponent_id: uuid.UUID
     opponent_slug: str
     opponent_username: str
@@ -122,6 +126,8 @@ class EloRatingHistoryEntry(BaseModel):
     rating_before: int
     rating_after: int
     rating_change: int
+    player_pokemon_score: int | None
+    opponent_pokemon_score: int | None
 
 
 class PlayerDetail(BaseModel):
@@ -134,6 +140,7 @@ class PlayerDetail(BaseModel):
     join_date: datetime
     is_active: bool
     elo_rating: int
+    is_site_creator: bool
     # Empty for the placeholder player even if a deleted player's championships
     # were transferred to it - see services.records.
     championships: list[ChampionshipRead]
@@ -157,3 +164,4 @@ class PlayerAdmin(PlayerPublic):
     biography: str | None = None
     discord_id: str | None = None
     initial_elo_rating: int
+    is_site_creator: bool

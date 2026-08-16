@@ -90,10 +90,13 @@ def build_player_detail(
         join_date=player.join_date,
         is_active=player.is_active,
         elo_rating=player.elo_rating,
+        is_site_creator=player.is_site_creator,
         championships=championships_for(player, champion_seasons),
         elo_history=[
             EloRatingHistoryEntry(
                 match_id=event.match_id,
+                match_game_id=event.match_game_id,
+                game_number=event.match_game.game_number,
                 opponent_id=event.opponent_id,
                 opponent_slug=event.opponent.slug,
                 opponent_username=event.opponent.username,
@@ -103,6 +106,16 @@ def build_player_detail(
                 rating_before=event.rating_before,
                 rating_after=event.rating_after,
                 rating_change=event.rating_change,
+                player_pokemon_score=(
+                    event.match_game.home_pokemon_score
+                    if event.player_id == event.match_game.match.home_player_id
+                    else event.match_game.away_pokemon_score
+                ),
+                opponent_pokemon_score=(
+                    event.match_game.away_pokemon_score
+                    if event.player_id == event.match_game.match.home_player_id
+                    else event.match_game.home_pokemon_score
+                ),
             )
             for event in elo_history
         ],
