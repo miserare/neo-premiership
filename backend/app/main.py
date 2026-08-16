@@ -14,6 +14,7 @@ from app.logging_config import configure_logging, request_id_var
 from app.routers import (
     admin,
     announcements,
+    hall_of_fame,
     home,
     matches,
     players,
@@ -90,6 +91,7 @@ app.include_router(seasons.router, prefix="/api")
 app.include_router(matches.router, prefix="/api")
 app.include_router(announcements.router, prefix="/api")
 app.include_router(home.router, prefix="/api")
+app.include_router(hall_of_fame.router, prefix="/api")
 app.include_router(admin.router, prefix="/api")
 app.include_router(site_links.router, prefix="/api")
 

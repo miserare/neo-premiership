@@ -3,6 +3,8 @@ from app.schemas.announcement import (
     AnnouncementRead,
     AnnouncementUpdate,
 )
+from app.schemas.common import SlugStr
+from app.schemas.hall_of_fame import HallOfFameEntry, HallOfFameResponse
 from app.schemas.home import HomeLink, HomeResponse, HomeSeasonInfo
 from app.schemas.match import (
     MatchCreate,
@@ -14,6 +16,7 @@ from app.schemas.match import (
     MatchUpdate,
 )
 from app.schemas.player import (
+    ChampionshipRead,
     PlayerCreate,
     PlayerDetail,
     PlayerAdmin,
@@ -64,6 +67,9 @@ __all__ = [
     "AnnouncementRead",
     "AnnouncementUpdate",
     "BracketRound",
+    "ChampionshipRead",
+    "HallOfFameEntry",
+    "HallOfFameResponse",
     "HomeResponse",
     "HomeSeasonInfo",
     "HomeLink",
@@ -81,6 +87,7 @@ __all__ = [
     "RosterChangeType",
     "RosterPokemonSet",
     "SeasonRosterPokemonRead",
+    "SlugStr",
     "SiteLinksRead",
     "SiteLinksUpdate",
     "PlayerCreate",

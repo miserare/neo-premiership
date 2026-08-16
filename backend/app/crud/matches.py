@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,6 +85,21 @@ async def get_matches_for_season(db: AsyncSession, season_id: uuid.UUID, stage: 
         Match.id,
     )
     result = await db.execute(stmt)
+    return list(result.unique().scalars().all())
+
+
+async def get_matches_for_seasons(
+    db: AsyncSession, season_ids: Sequence[uuid.UUID], stage: MatchStage | None = None
+) -> list[Match]:
+    """Matches across several seasons in one query, for pages that render more
+    than one season at a time (the Hall of Fame). Callers do their own ordering,
+    so this only guarantees determinism, not presentation order."""
+    if not season_ids:
+        return []
+    stmt = _with_participants(select(Match)).where(Match.season_id.in_(season_ids))
+    if stage is not None:
+        stmt = stmt.where(Match.stage == stage)
+    result = await db.execute(stmt.order_by(Match.season_id, Match.id))
     return list(result.unique().scalars().all())
 
 

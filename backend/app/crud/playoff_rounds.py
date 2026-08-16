@@ -1,4 +1,5 @@
 import uuid
+from collections.abc import Sequence
 
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -37,6 +38,23 @@ async def get_rounds_for_season(db: AsyncSession, season_id: uuid.UUID) -> list[
         select(PlayoffRound)
         .where(PlayoffRound.season_id == season_id)
         .order_by(PlayoffRound.display_order, PlayoffRound.id)
+    )
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
+
+
+async def get_rounds_for_seasons(
+    db: AsyncSession, season_ids: Sequence[uuid.UUID]
+) -> list[PlayoffRound]:
+    """Rounds across several seasons in one query, for pages that render more
+    than one bracket (the Hall of Fame). Same ordering rule as the single-season
+    version, grouped by season first."""
+    if not season_ids:
+        return []
+    stmt = (
+        select(PlayoffRound)
+        .where(PlayoffRound.season_id.in_(season_ids))
+        .order_by(PlayoffRound.season_id, PlayoffRound.display_order, PlayoffRound.id)
     )
     result = await db.execute(stmt)
     return list(result.scalars().all())
