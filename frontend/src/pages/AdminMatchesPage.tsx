@@ -33,6 +33,7 @@ interface CreateFormState {
   home_player_id: string;
   away_player_id: string;
   stage: MatchStage;
+  best_of: 1 | 3 | 5 | 7 | 9;
   /** Group stage only - the free-text group/matchday label. */
   round_label: string;
   /** Playoffs only - which round this match belongs to. */
@@ -46,6 +47,7 @@ const EMPTY_CREATE: CreateFormState = {
   home_player_id: "",
   away_player_id: "",
   stage: "group",
+  best_of: 1,
   round_label: "",
   playoff_round_id: "",
   bracket_order: "",
@@ -117,6 +119,7 @@ export default function AdminMatchesPage() {
           home_player_id: createForm.home_player_id,
           away_player_id: createForm.away_player_id,
           stage: createForm.stage,
+          best_of: createForm.best_of,
           // The two stages carry different fields, and neither leaks into the
           // other: a group match never sends a round, a playoff match never
           // sends a label.
@@ -185,6 +188,20 @@ export default function AdminMatchesPage() {
         <section>
           <h2>New Match</h2>
           <form className="admin-form" onSubmit={handleCreate}>
+            <div className="admin-form__row">
+              <label htmlFor="create-best-of">Series format</label>
+              <select
+                id="create-best-of"
+                value={createForm.best_of}
+                onChange={(event) =>
+                  setCreateForm({ ...createForm, best_of: Number(event.target.value) as 1 | 3 | 5 | 7 | 9 })
+                }
+              >
+                {[1, 3, 5, 7, 9].map((value) => (
+                  <option key={value} value={value}>Best of {value}</option>
+                ))}
+              </select>
+            </div>
             <div className="admin-form__row">
               <label htmlFor="create-home">Home player</label>
               <select
@@ -343,8 +360,8 @@ export default function AdminMatchesPage() {
                     <span className="admin-match-card__meta">
                       {match.round_label || (match.stage === "group" ? "Group" : "Playoffs")} &middot;{" "}
                       {match.status}
-                      {match.series.game_count > 1 &&
-                        ` · ${match.series.home_wins}-${match.series.away_wins}`}
+                      {match.status === "completed" &&
+                        ` · Series: ${match.series.home_series_wins}–${match.series.away_series_wins}`}
                       {match.featured_on_homepage && " · featured"}
                     </span>
                   </div>
@@ -563,6 +580,9 @@ function ScheduleForm({ match, playoffRounds, onSaved }: MatchEditorProps) {
 
 interface GameDraft {
   winner_id: string;
+  completed_at: string;
+  home_pokemon_score: string;
+  away_pokemon_score: string;
   replay_url: string;
 }
 
@@ -587,6 +607,9 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
     // saving persists it as a real row.
     match.games.map((game) => ({
       winner_id: game.winner_id ?? "",
+      completed_at: toLocalInput(game.completed_at ?? match.completed_at),
+      home_pokemon_score: game.home_pokemon_score?.toString() ?? "",
+      away_pokemon_score: game.away_pokemon_score?.toString() ?? "",
       replay_url: game.replay_url ?? "",
     })),
   );
@@ -605,13 +628,31 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
   // administrator sees what will be recorded.
   const homeWins = games.filter((game) => game.winner_id === match.home_player.id).length;
   const awayWins = games.filter((game) => game.winner_id === match.away_player.id).length;
-  const decided = homeWins !== awayWins;
+  const winsRequired = Math.floor(match.best_of / 2) + 1;
+  const decided = Math.max(homeWins, awayWins) === winsRequired;
   const derivedWinner = !decided
     ? null
     : homeWins > awayWins
       ? match.home_player.username
       : match.away_player.username;
   const everyGameHasAWinner = games.every((game) => game.winner_id !== "");
+  const gameValidationErrors = games.map((game) => {
+    const homeScore = Number(game.home_pokemon_score);
+    const awayScore = Number(game.away_pokemon_score);
+    if (!game.completed_at) return "Enter this game's completion time.";
+    const validScore =
+      (homeScore >= 1 && homeScore <= 6 && awayScore === 0) ||
+      (awayScore >= 1 && awayScore <= 6 && homeScore === 0);
+    if (!validScore) return "Pokémon score needs one value from 1–6 and the losing value 0.";
+    const scoreWinner = homeScore > 0 ? match.home_player.id : match.away_player.id;
+    if (game.winner_id !== scoreWinner) return "Winner must agree with this Pokémon score.";
+    return null;
+  });
+  const pokemonDifferential = games.reduce(
+    (sum, game) =>
+      sum + Number(game.home_pokemon_score || 0) - Number(game.away_pokemon_score || 0),
+    0,
+  );
 
   function updateGame(index: number, patch: Partial<GameDraft>) {
     setGames(games.map((game, i) => (i === index ? { ...game, ...patch } : game)));
@@ -628,9 +669,13 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
         setLocalError("Every game needs a winner before the match can be completed.");
         return;
       }
+      if (gameValidationErrors.some(Boolean)) {
+        setLocalError("Correct the highlighted individual game fields before saving.");
+        return;
+      }
       if (!decided) {
         setLocalError(
-          `This series is level at ${homeWins}-${awayWins}. Add the deciding game, or leave it as still scheduled.`,
+          `Series score is ${homeWins}-${awayWins}. A best-of-${match.best_of} ends when a player reaches ${winsRequired} wins.`,
         );
         return;
       }
@@ -649,9 +694,13 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
         .filter((game) => game.winner_id !== "")
         .map<MatchResultGameInput>((game, index) => ({
           game_number: index + 1,
+          completed_at: fromLocalInput(game.completed_at) as string,
           winner_id: game.winner_id,
+          home_pokemon_score: Number(game.home_pokemon_score),
+          away_pokemon_score: Number(game.away_pokemon_score),
           replay_url: game.replay_url.trim() || null,
         })),
+      best_of: match.best_of,
       home_team: homeTeam,
       away_team: awayTeam,
       youtube_url: youtubeUrl.trim() || null,
@@ -668,6 +717,7 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
         Games, teams and the stream link are saved together in one operation. The series score and
         the winner are worked out from the games below - there is nothing to type twice.
       </p>
+      <p><strong>Series format:</strong> Best of {match.best_of}</p>
 
       <div className="admin-form__row">
         <span className="admin-form__label">Games</span>
@@ -685,6 +735,30 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
               <option value={match.away_player.id}>{match.away_player.username}</option>
             </select>
             <input
+              aria-label={`Game ${index + 1} completed at`}
+              type="datetime-local"
+              value={game.completed_at}
+              onChange={(event) => updateGame(index, { completed_at: event.target.value })}
+            />
+            <input
+              aria-label={`Game ${index + 1} ${match.home_player.username} Pokémon score`}
+              type="number"
+              min={0}
+              max={6}
+              placeholder={`${match.home_player.username} score`}
+              value={game.home_pokemon_score}
+              onChange={(event) => updateGame(index, { home_pokemon_score: event.target.value })}
+            />
+            <input
+              aria-label={`Game ${index + 1} ${match.away_player.username} Pokémon score`}
+              type="number"
+              min={0}
+              max={6}
+              placeholder={`${match.away_player.username} score`}
+              value={game.away_pokemon_score}
+              onChange={(event) => updateGame(index, { away_pokemon_score: event.target.value })}
+            />
+            <input
               aria-label={`Game ${index + 1} replay URL`}
               type="url"
               placeholder="Replay URL"
@@ -695,25 +769,45 @@ function ResultForm({ match, onSaved }: ResultFormProps) {
               Remove
               <span className="visually-hidden"> game {index + 1}</span>
             </button>
+            {gameValidationErrors[index] && (
+              <span role="alert" className="admin-form__error">{gameValidationErrors[index]}</span>
+            )}
           </div>
         ))}
         <button
           type="button"
-          onClick={() => setGames([...games, { winner_id: "", replay_url: "" }])}
-          disabled={games.length >= 9}
+          onClick={() =>
+            setGames([
+              ...games,
+              {
+                winner_id: "",
+                completed_at: completedAt,
+                home_pokemon_score: "",
+                away_pokemon_score: "",
+                replay_url: "",
+              },
+            ])
+          }
+          disabled={games.length >= match.best_of}
         >
           Add game
         </button>
       </div>
 
       <p className="admin-result-form__derived" role="status">
-        <strong>Series:</strong> {match.home_player.username} {homeWins} - {awayWins}{" "}
+        <strong>Series:</strong> {match.home_player.username} {homeWins}–{awayWins}{" "}
         {match.away_player.username}
         {" · "}
         <strong>Winner:</strong>{" "}
         {games.length === 0
           ? "no games yet"
           : derivedWinner ?? `level at ${homeWins}-${awayWins}, so not decided`}
+      </p>
+      <p className="admin-result-form__derived">
+        <strong>Pokémon Diff:</strong> {match.home_player.username}{" "}
+        {pokemonDifferential > 0 ? `+${pokemonDifferential}` : pokemonDifferential} ·{" "}
+        {match.away_player.username}{" "}
+        {-pokemonDifferential > 0 ? `+${-pokemonDifferential}` : -pokemonDifferential}
       </p>
 
       <PokemonPicker

@@ -23,11 +23,8 @@ interface MatchRowProps {
 }
 
 function scoreFor(match: MatchRead, isHome: boolean): [number | null, number | null] {
-  // A multi-game series is scored by games won; a single game falls back to the
-  // legacy per-match score fields.
-  const isSeries = match.series.game_count > 1;
-  const home = isSeries ? match.series.home_wins : match.home_score;
-  const away = isSeries ? match.series.away_wins : match.away_score;
+  const home = match.series.home_series_wins;
+  const away = match.series.away_series_wins;
   return isHome ? [home, away] : [away, home];
 }
 
@@ -89,12 +86,12 @@ export default function MatchRow({ match, perspectiveId, label, featured }: Matc
             {/* A match with no recorded score reads as a bare Win/Loss rather
                 than a placeholder-filled "Win - -". */}
             {won ? "Win" : "Loss"}
-            {ownScore !== null && otherScore !== null && ` ${ownScore}-${otherScore}`}
+            {ownScore !== null && otherScore !== null && ` · Series: ${ownScore}–${otherScore}`}
           </span>
         )}
         {isCompleted && !perspectiveId && ownScore !== null && otherScore !== null && (
           <span className="match-row__result">
-            {ownScore}-{otherScore}
+            Series: {ownScore}–{otherScore}
           </span>
         )}
         {!isCompleted && (

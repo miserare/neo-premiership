@@ -163,14 +163,14 @@ describe("HomePage fixtures", () => {
               away_player: renk,
               winner_id: psykick.id,
               featured_on_homepage: true,
-              series: { home_wins: 2, away_wins: 1, game_count: 3 },
+              series: { home_series_wins: 2, away_series_wins: 1, game_count: 3, wins_required: 2 },
             }),
           ],
         },
       }),
     );
 
-    expect(await screen.findByText("2-1")).toBeInTheDocument();
+    expect(await screen.findByText("Series: 2–1")).toBeInTheDocument();
   });
 
   it("renders no Featured heading when nothing is pinned", async () => {

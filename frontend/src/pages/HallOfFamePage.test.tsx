@@ -128,15 +128,15 @@ describe("HallOfFamePage", () => {
             winner_id: champion.id,
             youtube_url: "https://example.invalid/vod",
             games: [
-              { id: "g1", game_number: 1, winner_id: champion.id, replay_url: "https://example.invalid/g1" },
-              { id: "g2", game_number: 2, winner_id: champion.id, replay_url: "https://example.invalid/g2" },
+              { id: "g1", game_number: 1, completed_at: "2025-01-01T00:00:00Z", winner_id: champion.id, home_pokemon_score: null, away_pokemon_score: null, replay_url: "https://example.invalid/g1" },
+              { id: "g2", game_number: 2, completed_at: "2025-01-01T00:10:00Z", winner_id: champion.id, home_pokemon_score: null, away_pokemon_score: null, replay_url: "https://example.invalid/g2" },
             ],
           }),
         ],
       }),
     ]);
 
-    expect(await screen.findByRole("link", { name: /G1/ })).toHaveAttribute(
+    expect((await screen.findAllByRole("link", { name: "Replay" }))[0]).toHaveAttribute(
       "href",
       "https://example.invalid/g1",
     );

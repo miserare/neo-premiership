@@ -96,6 +96,7 @@ export default function SeasonDetailPage() {
                   )}
                   {round.matches.map((match) => (
                     <li key={match.id} className="bracket-match">
+                      <span className="visually-hidden">Series score</span>
                       <div
                         className={
                           match.winner_id === match.home_player.id
@@ -105,7 +106,7 @@ export default function SeasonDetailPage() {
                       >
                         <Link to={playerPath(match.home_player.slug)}>{match.home_player.username}</Link>
                         <span>
-                          {match.series.game_count > 1 ? match.series.home_wins : (match.home_score ?? "-")}
+                          {match.series.home_series_wins}
                         </span>
                       </div>
                       <div
@@ -117,7 +118,7 @@ export default function SeasonDetailPage() {
                       >
                         <Link to={playerPath(match.away_player.slug)}>{match.away_player.username}</Link>
                         <span>
-                          {match.series.game_count > 1 ? match.series.away_wins : (match.away_score ?? "-")}
+                          {match.series.away_series_wins}
                         </span>
                       </div>
                       {(match.home_team.length > 0 || match.away_team.length > 0) && (

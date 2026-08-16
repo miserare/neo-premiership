@@ -65,6 +65,7 @@ function scheduledMatch(overrides: Partial<MatchRead> = {}): MatchRead {
     season_id: "s1",
     home_player: home,
     away_player: away,
+    best_of: 3,
     round_label: "Group A - Matchday 1",
     ...overrides,
   });
@@ -83,9 +84,24 @@ async function openEditor(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole("button", { name: "Edit" }));
 }
 
-async function addGame(user: ReturnType<typeof userEvent.setup>, winner: string, index: number) {
+async function addGame(
+  user: ReturnType<typeof userEvent.setup>,
+  winner: string,
+  index: number,
+  homeScore = winner === home.id ? "1" : "0",
+  awayScore = winner === away.id ? "1" : "0",
+) {
   await user.click(screen.getByRole("button", { name: "Add game" }));
   await user.selectOptions(screen.getByLabelText(`Game ${index} winner`), winner);
+  await user.type(screen.getByLabelText(`Game ${index} completed at`), `2026-08-15T19:0${index}`);
+  await user.type(
+    screen.getByLabelText(`Game ${index} Psykick Pokémon score`),
+    homeScore,
+  );
+  await user.type(
+    screen.getByLabelText(`Game ${index} Renk Pokémon score`),
+    awayScore,
+  );
 }
 
 describe("AdminMatchesPage result form", () => {
@@ -134,8 +150,23 @@ describe("AdminMatchesPage result form", () => {
     await addGame(user, home.id, 3);
 
     const derived = document.querySelector(".admin-result-form__derived");
-    expect(derived?.textContent).toContain("Psykick 2 - 1 Renk");
+    expect(derived?.textContent).toContain("Psykick 2–1 Renk");
     expect(derived?.textContent).toContain("Winner: Psykick");
+  });
+
+  it("previews series wins separately from Pokémon differential", async () => {
+    const user = userEvent.setup();
+    await openEditor(user);
+
+    await addGame(user, home.id, 1, "6", "0");
+    await addGame(user, away.id, 2, "0", "1");
+    await addGame(user, away.id, 3, "0", "1");
+
+    const previews = document.querySelectorAll(".admin-result-form__derived");
+    expect(previews[0]?.textContent).toContain("Psykick 1–2 Renk");
+    expect(previews[0]?.textContent).toContain("Winner: Renk");
+    expect(previews[1]?.textContent).toContain("Psykick +4");
+    expect(previews[1]?.textContent).toContain("Renk -4");
   });
 
   it("names a level series as undecided rather than picking one", async () => {
@@ -146,7 +177,7 @@ describe("AdminMatchesPage result form", () => {
     await addGame(user, away.id, 2);
 
     expect(document.querySelector(".admin-result-form__derived")?.textContent).toContain(
-      "level at 1-1",
+      "not decided",
     );
   });
 
@@ -159,7 +190,7 @@ describe("AdminMatchesPage result form", () => {
     await user.click(screen.getByLabelText("This match is complete"));
     await user.click(screen.getByRole("button", { name: "Save result" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("level at 1-1");
+    expect(await screen.findByRole("alert")).toHaveTextContent("Series score is 1-1");
     expect(setResult).not.toHaveBeenCalled();
   });
 
@@ -183,7 +214,7 @@ describe("AdminMatchesPage result form", () => {
     await user.click(screen.getByLabelText("This match is complete"));
     await user.click(screen.getByRole("button", { name: "Save result" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent("Every game needs a winner");
+    expect(await screen.findByText(/Every game needs a winner/)).toBeInTheDocument();
     expect(setResult).not.toHaveBeenCalled();
   });
 
@@ -208,9 +239,10 @@ describe("AdminMatchesPage result form", () => {
     const [matchId, payload] = setResult.mock.calls[0];
     expect(matchId).toBe("m1");
     expect(payload.status).toBe("completed");
+    expect(payload.best_of).toBe(3);
     expect(payload.games).toEqual([
-      { game_number: 1, winner_id: home.id, replay_url: "https://example.invalid/g1" },
-      { game_number: 2, winner_id: home.id, replay_url: null },
+      expect.objectContaining({ game_number: 1, winner_id: home.id, home_pokemon_score: 1, away_pokemon_score: 0, replay_url: "https://example.invalid/g1" }),
+      expect.objectContaining({ game_number: 2, winner_id: home.id, home_pokemon_score: 1, away_pokemon_score: 0, replay_url: null }),
     ]);
     expect(payload).toHaveProperty("home_team");
     expect(payload).toHaveProperty("away_team");

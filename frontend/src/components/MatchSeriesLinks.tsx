@@ -12,23 +12,29 @@ interface MatchSeriesLinksProps {
  * two of its three replays behind a single field.
  */
 export default function MatchSeriesLinks({ match }: MatchSeriesLinksProps) {
-  const playable = match.games.filter((game) => game.replay_url);
-
-  if (playable.length === 0) {
+  if (match.games.length === 0) {
     return null;
-  }
-
-  if (match.games.length === 1) {
-    return <ExternalLink href={playable[0].replay_url as string}>Replay</ExternalLink>;
   }
 
   return (
     <span className="match-series-links">
-      {playable.map((game) => (
-        <ExternalLink key={game.game_number} href={game.replay_url as string}>
-          G{game.game_number}
-        </ExternalLink>
-      ))}
+      {match.games.map((game) => {
+        const score =
+          game.home_pokemon_score === null || game.away_pokemon_score === null
+            ? "Score not recorded"
+            : `${game.home_pokemon_score}–${game.away_pokemon_score}`;
+        return (
+          <span key={game.id ?? game.game_number} className="match-series-links__game">
+            <strong>G{game.game_number}:</strong> {match.home_player.username} {score}{" "}
+            {match.away_player.username}
+            {game.replay_url && (
+              <>
+                {" — "}<ExternalLink href={game.replay_url}>Replay</ExternalLink>
+              </>
+            )}
+          </span>
+        );
+      })}
     </span>
   );
 }
