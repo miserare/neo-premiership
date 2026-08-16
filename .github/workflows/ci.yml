@@ -100,10 +100,12 @@ jobs:
         env:
           ENVIRONMENT: development
           MIGRATION_TEST_DATABASE_URL: postgresql+asyncpg://ci:ci@localhost:5432/ci
-        run: python -m pytest tests/test_playoff_round_migration.py -q
+        run: |
+          python -m pytest tests/test_playoff_round_migration.py -q
+          python -m pytest tests/test_slug_migration.py -q
 
   frontend:
-    name: Frontend typecheck and build
+    name: Frontend lint, tests, typecheck and build
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -117,6 +119,14 @@ jobs:
       - name: Install
         working-directory: frontend
         run: npm ci
+
+      - name: Lint
+        working-directory: frontend
+        run: npm run lint
+
+      - name: Component tests
+        working-directory: frontend
+        run: npm test
 
       - name: Typecheck
         working-directory: frontend
