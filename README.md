@@ -245,11 +245,13 @@ and redirect to the canonical form rather than 404ing.
   can use any Pokémon that player rostered during the season.
 - **A match result is one save.** `PUT /api/matches/{id}/result` writes the
   games, both teams, the completion timestamp, the stream link and the status in
-  a single transaction, and rebuilds Elo once afterwards. The series score and
-  the match winner are *derived* from the game winners rather than entered
-  again, so the two cannot disagree - and a level series therefore has no winner,
-  which is what lets the endpoint refuse to mark it completed. Cancelling a
-  match stays on the `PATCH` endpoint alongside the other corrections.
+  a single transaction, and rebuilds Elo once afterwards. A `Match` is the
+  fixture or series; each `MatchGame` is one Pokémon battle. The series tally
+  and winner are derived from the game winners, while the per-game Pokémon
+  scores record how many Pokémon remained (1–6 to 0). Best-of formats are
+  explicit and a result cannot contain games after the deciding win. Unknown
+  historical Pokémon scores stay unknown and display as “Score not recorded.”
+  Cancelling a match stays on the `PATCH` endpoint alongside corrections.
 - **Announcements and biographies are plain text.** Newlines are preserved with
   `white-space: pre-wrap` and the text is escaped as a React child. There is no
   markdown step and no `dangerouslySetInnerHTML`, so nothing an administrator
@@ -258,13 +260,19 @@ and redirect to the canonical form rather than 404ing.
   `seasons.champion_id` on every read; there is no `is_champion` column to drift
   out of step with it. The Hall of Fame reads championship runs back out of the
   existing match rows rather than duplicating them.
-- **Elo is chronological and automatic.** A completed match must have a winner
-  and timezone-aware completion timestamp. Saving, correcting, cancelling, or
-  deleting a result rebuilds every rating in timestamp order using `K = 64`.
-  Each player keeps a dated, per-match ledger; their current Elo is a derived
-  cache, while the administrator edits only their starting Elo. Matches with
-  the exact same completion timestamp use their stable match ID as a
-  deterministic tie-breaker.
+- **Standings use recorded Pokémon differential.** Group-stage wins and losses
+  count completed series. Pokémon differential sums each recorded game's
+  Pokémon scores; playoff games do not affect it. If any historical game score
+  needed for a player's differential is unknown, the public table says “Not
+  recorded” instead of inventing a value. The legacy manual tiebreaker remains
+  only as a secondary fallback.
+- **Elo is chronological and automatic.** Every completed individual game is
+  one Elo event; the Pokémon margin does not change the calculation. Saving,
+  correcting, cancelling, or deleting a result rebuilds every rating in game
+  timestamp order using `K = 64`. Each player keeps a dated, per-game ledger;
+  current Elo is a derived cache, while the administrator edits only starting
+  Elo. Equal timestamps use stable match, game-number, and game IDs as
+  deterministic tie-breakers.
 
 ## Credits and licence
 
