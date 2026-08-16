@@ -9,6 +9,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from uuid import UUID
 
 import pytest
 from sqlalchemy import text
@@ -266,3 +267,86 @@ async def test_migration_refuses_an_unknown_group_pokemon_score() -> None:
     assert await _rows(MIGRATION_DB_URL, "SELECT version_num FROM alembic_version") == [
         (LEGACY_REVISION,)
     ]
+
+
+async def test_migration_applies_the_reviewed_ael_two_zero_correction() -> None:
+    assert MIGRATION_DB_URL is not None
+    await _reset(MIGRATION_DB_URL)
+    engine = create_async_engine(MIGRATION_DB_URL)
+    async with engine.begin() as connection:
+        await connection.execute(
+            text(
+                """
+                INSERT INTO players
+                    (id, username, slug, join_date, is_active, is_placeholder,
+                     elo_rating, initial_elo_rating)
+                VALUES
+                  ('11111111-1111-4111-8111-111111111111', 'AEL (Cheeburbur)',
+                   'cheeburbur', now(), true, false, 1000, 1000),
+                  ('22222222-2222-4222-8222-222222222222', 'Renk',
+                   'renk', now(), true, false, 1000, 1000)
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO seasons (id, name, slug, start_date)
+                VALUES ('99999999-9999-4999-8999-999999999999',
+                        'Reviewed Season', 'reviewed-season', DATE '2026-01-01')
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO matches
+                    (id, season_id, home_player_id, away_player_id, winner_id,
+                     status, stage, completed_at, home_score, away_score)
+                VALUES
+                  ('c2dece82-561d-4664-be58-fa94c4d96e2a',
+                   '99999999-9999-4999-8999-999999999999',
+                   '11111111-1111-4111-8111-111111111111',
+                   '22222222-2222-4222-8222-222222222222',
+                   '11111111-1111-4111-8111-111111111111',
+                   'completed', 'playoffs', TIMESTAMPTZ '2026-01-02 20:00+00',
+                   NULL, NULL)
+                """
+            )
+        )
+        await connection.execute(
+            text(
+                """
+                INSERT INTO match_games (id, match_id, game_number, winner_id)
+                VALUES
+                  ('bbbbbbbb-0000-4000-8000-000000000001',
+                   'c2dece82-561d-4664-be58-fa94c4d96e2a', 1,
+                   '11111111-1111-4111-8111-111111111111'),
+                  ('bbbbbbbb-0000-4000-8000-000000000002',
+                   'c2dece82-561d-4664-be58-fa94c4d96e2a', 2,
+                   '11111111-1111-4111-8111-111111111111'),
+                  ('bbbbbbbb-0000-4000-8000-000000000003',
+                   'c2dece82-561d-4664-be58-fa94c4d96e2a', 3, NULL)
+                """
+            )
+        )
+    await engine.dispose()
+
+    result = _alembic(["upgrade", "head"], MIGRATION_DB_URL)
+    assert result.returncode == 0, result.stderr
+    assert await _rows(
+        MIGRATION_DB_URL,
+        """
+        SELECT m.best_of, g.game_number, g.winner_id
+        FROM matches m JOIN match_games g ON g.match_id=m.id
+        WHERE m.id='c2dece82-561d-4664-be58-fa94c4d96e2a'
+        ORDER BY g.game_number
+        """,
+    ) == [
+        (3, 1, UUID("11111111-1111-4111-8111-111111111111")),
+        (3, 2, UUID("11111111-1111-4111-8111-111111111111")),
+    ]
+    assert await _rows(
+        MIGRATION_DB_URL,
+        "SELECT count(*) FROM elo_rating_events",
+    ) == [(4,)]

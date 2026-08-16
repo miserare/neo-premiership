@@ -24,6 +24,64 @@ down_revision: Union[str, None] = "b8e1d3a67c25"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
+# League-approved correction supplied for the one ambiguous production row.
+_AEL_RENK_MATCH_ID = uuid.UUID("c2dece82-561d-4664-be58-fa94c4d96e2a")
+
+
+def _apply_reviewed_corrections(connection: sa.Connection) -> None:
+    """Remove only the reviewed unused G3 from AEL's 2–0 win over Renk.
+
+    The guards are deliberately exhaustive. If the production row no longer
+    has the audited shape, the migration stops instead of deleting anything.
+    Databases without this historical match (new installs and tests) are a
+    no-op.
+    """
+    match = connection.execute(
+        sa.text(
+            """
+            SELECT m.id, m.status, m.stage, m.home_player_id, m.away_player_id,
+                   m.winner_id, hp.username AS home_username,
+                   ap.username AS away_username
+            FROM matches m
+            JOIN players hp ON hp.id = m.home_player_id
+            JOIN players ap ON ap.id = m.away_player_id
+            WHERE m.id = :match_id
+            """
+        ),
+        {"match_id": _AEL_RENK_MATCH_ID},
+    ).mappings().one_or_none()
+    if match is None:
+        return
+
+    games = connection.execute(
+        sa.text(
+            "SELECT id, game_number, winner_id FROM match_games "
+            "WHERE match_id=:match_id ORDER BY game_number, id"
+        ),
+        {"match_id": _AEL_RENK_MATCH_ID},
+    ).mappings().all()
+    expected_shape = (
+        match["status"] == "completed"
+        and match["stage"] == "playoffs"
+        and match["home_username"] == "AEL (Cheeburbur)"
+        and match["away_username"] == "Renk"
+        and match["winner_id"] == match["home_player_id"]
+        and len(games) == 3
+        and [game["game_number"] for game in games] == [1, 2, 3]
+        and games[0]["winner_id"] == match["home_player_id"]
+        and games[1]["winner_id"] == match["home_player_id"]
+        and games[2]["winner_id"] is None
+    )
+    if not expected_shape:
+        raise RuntimeError(
+            "The reviewed AEL vs Renk correction no longer matches production. "
+            f"Refusing to alter match {_AEL_RENK_MATCH_ID}."
+        )
+    connection.execute(
+        sa.text("DELETE FROM match_games WHERE id=:game_id"),
+        {"game_id": games[2]["id"]},
+    )
+
 
 def _expected_score(player_rating: int, opponent_rating: int) -> float:
     difference = (opponent_rating - player_rating) / 400
@@ -224,6 +282,7 @@ def _rebuild_elo(connection: sa.Connection) -> None:
 
 def upgrade() -> None:
     connection = op.get_bind()
+    _apply_reviewed_corrections(connection)
     _preflight(connection)
 
     op.add_column("matches", sa.Column("best_of", sa.Integer(), server_default="1", nullable=False))
