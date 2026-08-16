@@ -3,13 +3,14 @@ from uuid import UUID
 
 import pytest
 from httpx import AsyncClient
+from sqlalchemy.dialects import postgresql
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.player import Player
 from app.models.season import Season
 from app.models.match import Match, MatchStage, MatchStatus
 from app.models.match_game import MatchGame
-from app.services.elo import recalculate_elo_ratings
+from app.services.elo import _completed_games_statement, recalculate_elo_ratings
 from tests.conftest import ADMIN_HEADERS, make_player, make_season
 
 
@@ -48,6 +49,15 @@ async def _completed_match(
         },
         headers=ADMIN_HEADERS,
     )
+
+
+def test_completed_game_lock_is_scoped_to_non_nullable_table() -> None:
+    """The query must remain legal on PostgreSQL when its eager load joins matches."""
+
+    sql = str(_completed_games_statement().compile(dialect=postgresql.dialect()))
+
+    assert "LEFT OUTER JOIN matches" in sql
+    assert "FOR UPDATE OF match_games" in sql
 
 
 async def test_equal_ratings_move_by_32_points(

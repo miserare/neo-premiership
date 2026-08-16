@@ -1,7 +1,7 @@
 import uuid
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import Select, delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
 
@@ -34,6 +34,34 @@ def _round_rating_change(value: float) -> int:
     return int(Decimal(str(value)).quantize(_ONE_POINT, rounding=ROUND_HALF_UP))
 
 
+def _completed_games_statement() -> Select[tuple[MatchGame]]:
+    """Completed games in the exact order used to rebuild Elo.
+
+    PostgreSQL rejects an unscoped ``FOR UPDATE`` when an eager load adds a
+    LEFT OUTER JOIN: it would otherwise try to lock the nullable side of that
+    join.  Lock only the concrete game rows.  The player lock acquired first in
+    ``recalculate_elo_ratings`` remains the serialization point for competing
+    administrative writes.
+    """
+
+    return (
+        select(MatchGame)
+        .join(Match, Match.id == MatchGame.match_id)
+        .where(
+            Match.status == MatchStatus.COMPLETED,
+            MatchGame.winner_id.is_not(None),
+        )
+        .options(joinedload(MatchGame.match))
+        .order_by(
+            func.coalesce(MatchGame.completed_at, Match.completed_at).asc().nullslast(),
+            Match.id,
+            MatchGame.game_number,
+            MatchGame.id,
+        )
+        .with_for_update(of=MatchGame)
+    )
+
+
 async def recalculate_elo_ratings(db: AsyncSession) -> None:
     """Rebuild all current ratings and history in completion-time order.
 
@@ -53,22 +81,7 @@ async def recalculate_elo_ratings(db: AsyncSession) -> None:
 
     await db.execute(delete(EloRatingEvent))
 
-    game_result = await db.execute(
-        select(MatchGame)
-        .join(Match, Match.id == MatchGame.match_id)
-        .where(
-            Match.status == MatchStatus.COMPLETED,
-            MatchGame.winner_id.is_not(None),
-        )
-        .options(joinedload(MatchGame.match))
-        .order_by(
-            func.coalesce(MatchGame.completed_at, Match.completed_at).asc().nullslast(),
-            Match.id,
-            MatchGame.game_number,
-            MatchGame.id,
-        )
-        .with_for_update()
-    )
+    game_result = await db.execute(_completed_games_statement())
 
     for game in game_result.scalars().all():
         match = game.match
