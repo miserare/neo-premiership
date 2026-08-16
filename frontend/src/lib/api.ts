@@ -3,10 +3,12 @@ import type {
   AnnouncementCreateInput,
   AnnouncementRead,
   AnnouncementUpdateInput,
+  HallOfFameResponse,
   HomeResponse,
   MatchCreateInput,
   MatchGameInput,
   MatchRead,
+  MatchResultInput,
   MatchUpdateInput,
   Player,
   PlayerAdmin,
@@ -148,7 +150,10 @@ export const api = {
   players: {
     list: (params: ListParams = {}): Promise<Player[]> =>
       request<Player[]>(`/players${buildQuery(params)}`),
-    get: (id: string): Promise<PlayerDetail> => request<PlayerDetail>(`/players/${id}`),
+    /** Accepts a canonical slug or a legacy UUID - the API resolves both, which
+     * is what lets the app redirect an old link to its canonical form. */
+    get: (ref: string): Promise<PlayerDetail> =>
+      request<PlayerDetail>(`/players/${encodeURIComponent(ref)}`),
     /** Administrative roster including private fields. Requires a session. */
     listAdmin: (params: ListParams = {}): Promise<PlayerAdmin[]> =>
       request<PlayerAdmin[]>(`/players/admin/list${buildQuery(params)}`),
@@ -161,7 +166,12 @@ export const api = {
   seasons: {
     list: (params: ListParams = {}): Promise<SeasonSummary[]> =>
       request<SeasonSummary[]>(`/seasons${buildQuery(params)}`),
-    get: (id: string): Promise<SeasonDetail> => request<SeasonDetail>(`/seasons/${id}`),
+    /** Accepts a canonical slug or a legacy UUID. */
+    get: (ref: string): Promise<SeasonDetail> =>
+      request<SeasonDetail>(`/seasons/${encodeURIComponent(ref)}`),
+    /** The active season, or the most recently started one between seasons.
+     * The response's `is_active` says which. */
+    current: (): Promise<SeasonDetail> => request<SeasonDetail>("/seasons/current"),
     create: (input: SeasonCreateInput): Promise<SeasonSummary> =>
       request<SeasonSummary>("/seasons", { method: "POST", body: JSON.stringify(input) }),
     update: (id: string, input: SeasonUpdateInput): Promise<SeasonSummary> =>
@@ -232,6 +242,16 @@ export const api = {
         method: "PUT",
         body: JSON.stringify({ pokemon }),
       }),
+    /** Games, both teams, status and timestamps in one transaction. The series
+     * score and match winner come back derived; they are not sent. */
+    setResult: (id: string, input: MatchResultInput): Promise<MatchRead> =>
+      request<MatchRead>(`/matches/${id}/result`, {
+        method: "PUT",
+        body: JSON.stringify(input),
+      }),
+  },
+  hallOfFame: {
+    get: (): Promise<HallOfFameResponse> => request<HallOfFameResponse>("/hall-of-fame"),
   },
   home: {
     get: (): Promise<HomeResponse> => request<HomeResponse>("/home"),

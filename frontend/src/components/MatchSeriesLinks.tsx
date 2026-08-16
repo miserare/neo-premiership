@@ -32,12 +32,3 @@ export default function MatchSeriesLinks({ match }: MatchSeriesLinksProps) {
     </span>
   );
 }
-
-/** "2-1" for a decided multi-game series, otherwise null - a Bo1 reads better
- * as a plain win/loss than as "1-0". */
-export function formatSeriesScore(match: MatchRead): string | null {
-  if (match.series.game_count < 2) {
-    return null;
-  }
-  return `${match.series.home_wins}-${match.series.away_wins}`;
-}

@@ -11,6 +11,9 @@ export interface AdminSessionInfo {
 // No discord_id: anonymous responses never carry contact details.
 export interface Player {
   id: string;
+  /** Canonical URL identity: /player/psykick. Stored, not derived from the
+   * username, so renaming a player never breaks their links. */
+  slug: string;
   username: string;
   join_date: string;
   is_active: boolean;
@@ -20,6 +23,7 @@ export interface Player {
 // Mirrors backend/app/schemas/player.py::PlayerAdmin
 // Only returned from routes guarded by an administrator session.
 export interface PlayerAdmin extends Player {
+  biography: string | null;
   discord_id: string | null;
   initial_elo_rating: number;
 }
@@ -27,6 +31,9 @@ export interface PlayerAdmin extends Player {
 // Mirrors backend/app/schemas/player.py::PlayerCreate
 export interface PlayerCreateInput {
   username: string;
+  /** Derived from the username when omitted. */
+  slug?: string | null;
+  biography?: string | null;
   discord_id?: string | null;
   is_active?: boolean;
   initial_elo_rating?: number | null;
@@ -35,6 +42,9 @@ export interface PlayerCreateInput {
 // Mirrors backend/app/schemas/player.py::PlayerUpdate
 export interface PlayerUpdateInput {
   username?: string;
+  /** Only ever sent when an administrator changes it deliberately. */
+  slug?: string;
+  biography?: string | null;
   discord_id?: string | null;
   is_active?: boolean;
   initial_elo_rating?: number | null;
@@ -43,6 +53,7 @@ export interface PlayerUpdateInput {
 // Mirrors backend/app/schemas/player.py::PlayerSummary
 export interface PlayerSummary {
   id: string;
+  slug: string;
   username: string;
   elo_rating: number;
   is_active: boolean;
@@ -57,6 +68,7 @@ export interface PlayerRecord {
 // Mirrors backend/app/schemas/player.py::PlayerSeasonRecord
 export interface PlayerSeasonRecord {
   season_id: string;
+  season_slug: string;
   season_name: string;
   wins: number;
   losses: number;
@@ -68,6 +80,7 @@ export interface PlayerSeasonRecord {
 export interface EloRatingHistoryEntry {
   match_id: string;
   opponent_id: string;
+  opponent_slug: string;
   opponent_username: string;
   occurred_at: string;
   result: 0 | 1;
@@ -155,6 +168,9 @@ export interface MatchRead {
   away_score: number | null;
   replay_url: string | null;
   youtube_url: string | null;
+  /** Administrator highlighting. Explicit data, never inferred from dates. */
+  featured_on_homepage: boolean;
+  homepage_feature_order: number | null;
   games: MatchGameRead[];
   series: MatchSeries;
   home_team: MatchPokemon[];
@@ -179,6 +195,8 @@ export interface MatchCreateInput {
   home_score?: number | null;
   away_score?: number | null;
   youtube_url?: string | null;
+  featured_on_homepage?: boolean;
+  homepage_feature_order?: number | null;
 }
 
 // Mirrors backend/app/schemas/match.py::MatchUpdate
@@ -194,15 +212,52 @@ export interface MatchUpdateInput {
   home_score?: number | null;
   away_score?: number | null;
   youtube_url?: string | null;
+  featured_on_homepage?: boolean;
+  homepage_feature_order?: number | null;
+}
+
+// Mirrors backend/app/schemas/player.py::ChampionshipRead
+// Derived from seasons.champion_id on every read; there is no is_champion flag.
+export interface ChampionshipRead {
+  season_id: string;
+  season_slug: string;
+  season_name: string;
+  start_date: string;
+  end_date: string | null;
+}
+
+// Mirrors backend/app/schemas/match.py::MatchResultGameInput
+export interface MatchResultGameInput {
+  game_number: number;
+  /** Required: a played game has a winner. Unplayed games are simply not sent. */
+  winner_id: string;
+  replay_url?: string | null;
+}
+
+// Mirrors backend/app/schemas/match.py::MatchResultSet
+// The series score and match winner are derived server-side from the game
+// winners, so neither appears here.
+export interface MatchResultInput {
+  status: "completed" | "scheduled";
+  completed_at?: string | null;
+  games: MatchResultGameInput[];
+  home_team: PokemonInput[];
+  away_team: PokemonInput[];
+  youtube_url?: string | null;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerDetail
 export interface PlayerDetail {
   id: string;
+  slug: string;
   username: string;
+  biography: string | null;
   join_date: string;
   is_active: boolean;
   elo_rating: number;
+  /** Empty for the placeholder player even when a deleted champion's titles
+   * were transferred to it. */
+  championships: ChampionshipRead[];
   elo_history: EloRatingHistoryEntry[];
   most_recent_season_record: PlayerSeasonRecord | null;
   historical_record: PlayerRecord;
@@ -223,6 +278,7 @@ export interface AnnouncementRead {
 // Mirrors backend/app/schemas/season.py::SeasonSummary
 export interface SeasonSummary {
   id: string;
+  slug: string;
   name: string;
   start_date: string;
   end_date: string | null;
@@ -240,20 +296,25 @@ export interface RosterEntry {
 // Mirrors backend/app/schemas/season.py::SeasonCreate
 export interface SeasonCreateInput {
   name: string;
+  /** Derived from the name when omitted ("Season 6" -> "6"). */
+  slug?: string | null;
   start_date: string;
   end_date?: string | null;
   champion_id?: string | null;
   overview?: string | null;
+  hall_of_fame_description?: string | null;
   sheet_url?: string | null;
 }
 
 // Mirrors backend/app/schemas/season.py::SeasonUpdate
 export interface SeasonUpdateInput {
   name?: string;
+  slug?: string;
   start_date?: string;
   end_date?: string | null;
   champion_id?: string | null;
   overview?: string | null;
+  hall_of_fame_description?: string | null;
   sheet_url?: string | null;
 }
 
@@ -338,12 +399,16 @@ export interface SeasonStream {
 // Mirrors backend/app/schemas/season.py::SeasonDetail
 export interface SeasonDetail {
   id: string;
+  slug: string;
   name: string;
   start_date: string;
   end_date: string | null;
+  /** False between seasons, when this is the most recently started season
+   * rather than one in progress. */
   is_active: boolean;
   sheet_url: string | null;
   overview: string | null;
+  hall_of_fame_description: string | null;
   champion: PlayerSummary | null;
   roster: RosterEntry[];
   standings: StandingsGroup[];
@@ -392,10 +457,24 @@ export interface AnnouncementUpdateInput {
 // Mirrors backend/app/schemas/home.py::HomeSeasonInfo
 export interface HomeSeasonInfo {
   id: string;
+  slug: string;
   name: string;
   is_active: boolean;
   sheet_url: string | null;
   roster: PlayerSummary[];
+}
+
+// Mirrors backend/app/schemas/home.py::HomeResponse
+// Mirrors backend/app/schemas/home.py::HomeFixtures
+// `featured` and `this_week` are separate because they are different claims:
+// one is a fact about the calendar, the other an editorial decision. A featured
+// match in the current week appears only in `featured`, never in both.
+export interface HomeFixtures {
+  week_start: string;
+  week_end: string;
+  timezone: string;
+  featured: MatchRead[];
+  this_week: MatchRead[];
 }
 
 // Mirrors backend/app/schemas/home.py::HomeResponse
@@ -405,4 +484,28 @@ export interface HomeResponse {
   document: HomeLink | null;
   table: HomeLink | null;
   current_season: HomeSeasonInfo | null;
+  fixtures: HomeFixtures;
+}
+
+// Mirrors backend/app/schemas/hall_of_fame.py::HallOfFameEntry
+export interface HallOfFameEntry {
+  season_id: string;
+  season_slug: string;
+  season_name: string;
+  start_date: string;
+  end_date: string | null;
+  champion: PlayerSummary;
+  championship_count: number;
+  description: string | null;
+  /** True when `description` fell back to the season overview because no Hall
+   * of Fame text has been written. */
+  description_is_fallback: boolean;
+  /** Already in tournament order - by round display_order then bracket
+   * position. Never re-sort it in the client. */
+  championship_run: MatchRead[];
+}
+
+// Mirrors backend/app/schemas/hall_of_fame.py::HallOfFameResponse
+export interface HallOfFameResponse {
+  entries: HallOfFameEntry[];
 }

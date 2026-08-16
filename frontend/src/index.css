@@ -1628,3 +1628,126 @@ table,
 .admin-login-form {
   max-width: 380px;
 }
+
+/* ========================= Shared: plain-text prose ====================== */
+
+/* Administrator prose is plain text, and the newlines they typed carry meaning
+   - a fixture list loses its shape without them. pre-wrap keeps every newline
+   and run of spaces while still wrapping long lines; overflow-wrap stops an
+   unbroken URL pushing the card wider than the page. */
+.plain-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0 0 var(--s3);
+}
+
+.plain-text:last-child {
+  margin-bottom: 0;
+}
+
+/* A trailing blank line in the source would otherwise leave a tall empty strip
+   at the bottom of the card. */
+.plain-text:empty {
+  display: none;
+}
+
+/* =========================== Shared: match rows ========================== */
+
+.match-row__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s2);
+  width: 100%;
+}
+
+.match-row__label {
+  color: var(--text-muted);
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* Featured matches are marked with a word as well as the gold edge below -
+   colour alone is not a distinction for every reader. */
+.match-row__featured-flag {
+  padding: 0.05rem 0.4rem;
+  border: 1px solid var(--gold);
+  border-radius: 3px;
+  color: var(--gold);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.match-row--featured {
+  border-left: 3px solid var(--gold);
+}
+
+.match-row__status {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.match-list__empty,
+.fixtures__empty {
+  color: var(--text-muted);
+}
+
+/* ============================ Shared: disclosure ========================= */
+
+.disclosure__toggle {
+  margin-top: var(--s3);
+  padding: var(--s2) var(--s3);
+  background: var(--surface-2);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.disclosure__toggle:hover {
+  border-color: var(--accent);
+}
+
+/* ========================== Shared: champion badge ======================= */
+
+.champion-badge {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--s2) var(--s3);
+  padding: var(--s2) var(--s3);
+  background: rgba(252, 203, 4, 0.08);
+  border: 1px solid rgba(252, 203, 4, 0.35);
+  border-radius: var(--radius);
+  margin: 0 0 var(--s4);
+}
+
+.champion-badge__title {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+  color: var(--gold);
+}
+
+.champion-badge__star {
+  font-size: 1.1rem;
+  line-height: 1;
+}
+
+.champion-badge__seasons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--s2) var(--s3);
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  font-size: 0.85rem;
+}
