@@ -48,6 +48,7 @@ All settings come from environment variables; see `.env.example`.
 | `VITE_API_URL` | API base URL, baked in at build time. Leave **empty** in production so the app calls `/api` on its own origin. |
 | `ENVIRONMENT` | Defaults to `production`. Set to `development` to turn on SQLAlchemy query echo. |
 | `DOMAIN` | Production only. The hostname Caddy requests a certificate for. |
+| `LEAGUE_TIMEZONE` | IANA zone the league's week is measured in. Defaults to `America/New_York`. See **The league week** below. |
 
 Generate a real admin token with:
 
@@ -76,10 +77,12 @@ constraints and never writes data backfills.
 ## Tests
 
 ```bash
-cd backend && python -m pytest        # 57 tests
-cd backend && ruff check app/ tests/
-cd frontend && npx tsc -b && npm run build
+cd backend && python -m pytest        # 218 tests
+cd backend && ruff check app/ tests/ seeds/
+cd frontend && npm run lint && npm test && npx tsc -b && npm run build
 ```
+
+Frontend tests are Vitest + React Testing Library in jsdom.
 
 Tests run against in-memory SQLite for speed. Note that **SQLite does not
 enforce foreign keys**, so anything depending on `ON DELETE` behaviour — player
@@ -175,6 +178,52 @@ docker-compose.yml        Development
 docker-compose.prod.yml   Production
 ```
 
+## The league week
+
+The home page lists the matches of the *current league week*. That has to mean
+the same thing on a laptop in Europe, in CI and on the production VPS, so it is
+measured against `LEAGUE_TIMEZONE` rather than whatever the server's clock is
+set to - a match at 04:00 UTC on Saturday is Friday evening for this league.
+
+> A week runs **Monday 00:00:00** up to, but not including, the following
+> Monday 00:00:00, in `LEAGUE_TIMEZONE`.
+
+The window is half-open, so a match at exactly midnight belongs to the week
+starting then and to exactly one week. It is computed on the local date and
+re-localized, so a week containing a daylight-saving change is 167 or 169 hours
+long rather than shifting the boundary by an hour.
+
+Administrators can also pin a match to the home page (**featured**), which
+shows it whatever week it falls in and whatever its status. Cancelled matches
+are excluded from the automatic weekly list unless deliberately featured, and a
+featured match never appears in both lists.
+
+## URLs
+
+Players and seasons have stored slugs, so their public addresses are readable
+and stable:
+
+```
+/player/psykick
+/seasons/6/standings
+/standings                 the season the league is in right now
+/hall-of-fame
+```
+
+A slug is **data, not a rendering of the name**. It is derived once when the
+row is created - a player's from their username, a season's from its name with
+a leading "Season" dropped, so "Season 6" becomes "6" - and never re-derived,
+so renaming a player does not break links to them. Administrators can change a
+slug deliberately in the admin area; nothing else changes it.
+
+Slugs are lowercase ASCII letters, digits and single hyphens, unique
+case-insensitively. Two league members carry a parenthetical second name and
+their slugs are listed explicitly in the backfill migration, because no single
+rule produces both `spectre` and `cheeburbur`.
+
+The old UUID URLs still work: `/players/<uuid>` and `/seasons/<uuid>` resolve
+and redirect to the canonical form rather than 404ing.
+
 ## Notable behaviour
 
 - **Matches are series.** Each match holds ordered games with their own winner
@@ -194,6 +243,21 @@ docker-compose.prod.yml   Production
   and adding it to the other. Match-team choices are evaluated at the match's
   completed time (or scheduled time when not completed); undated legacy matches
   can use any Pokémon that player rostered during the season.
+- **A match result is one save.** `PUT /api/matches/{id}/result` writes the
+  games, both teams, the completion timestamp, the stream link and the status in
+  a single transaction, and rebuilds Elo once afterwards. The series score and
+  the match winner are *derived* from the game winners rather than entered
+  again, so the two cannot disagree - and a level series therefore has no winner,
+  which is what lets the endpoint refuse to mark it completed. Cancelling a
+  match stays on the `PATCH` endpoint alongside the other corrections.
+- **Announcements and biographies are plain text.** Newlines are preserved with
+  `white-space: pre-wrap` and the text is escaped as a React child. There is no
+  markdown step and no `dangerouslySetInnerHTML`, so nothing an administrator
+  types can become markup.
+- **Champions are derived, not flagged.** A player's championships come from
+  `seasons.champion_id` on every read; there is no `is_champion` column to drift
+  out of step with it. The Hall of Fame reads championship runs back out of the
+  existing match rows rather than duplicating them.
 - **Elo is chronological and automatic.** A completed match must have a winner
   and timezone-aware completion timestamp. Saving, correcting, cancelling, or
   deleting a result rebuilds every rating in timestamp order using `K = 64`.

@@ -33,6 +33,9 @@ services:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-neo_premiership}:${POSTGRES_PASSWORD:-neo_premiership}@db:5432/${POSTGRES_DB:-neo_premiership}
       CORS_ORIGINS: '${CORS_ORIGINS:-["http://localhost:5173"]}'
       ADMIN_TOKEN: ${ADMIN_TOKEN:-}
+      # The zone the league's week is measured in; see README.md. Set it here
+      # too so development and production agree about which week it is.
+      LEAGUE_TIMEZONE: ${LEAGUE_TIMEZONE:-America/New_York}
     depends_on:
       db:
         condition: service_healthy

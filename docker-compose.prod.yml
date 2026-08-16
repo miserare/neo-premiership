@@ -106,6 +106,9 @@ services:
       LOGIN_MAX_ATTEMPTS: ${LOGIN_MAX_ATTEMPTS:-5}
       LOGIN_IP_MAX_ATTEMPTS: ${LOGIN_IP_MAX_ATTEMPTS:-20}
       LOGIN_LOCKOUT_MINUTES: ${LOGIN_LOCKOUT_MINUTES:-15}
+      # The zone the league's week is measured in, so "this week" on the home
+      # page does not depend on the host's clock. See README.md.
+      LEAGUE_TIMEZONE: ${LEAGUE_TIMEZONE:-America/New_York}
       # Same-origin behind Caddy, so there is no cross-origin request to allow.
       CORS_ORIGINS: ""
     secrets:
