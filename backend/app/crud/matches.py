@@ -1,11 +1,12 @@
 import uuid
 from collections.abc import Sequence
+from datetime import datetime
 
 from sqlalchemy import Select, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.models.match import Match, MatchStage
+from app.models.match import Match, MatchStage, MatchStatus
 from app.models.playoff_round import PlayoffRound
 from app.schemas.match import MatchCreate, MatchUpdate
 from app.services.elo import recalculate_elo_ratings
@@ -100,6 +101,52 @@ async def get_matches_for_seasons(
     if stage is not None:
         stmt = stmt.where(Match.stage == stage)
     result = await db.execute(stmt.order_by(Match.season_id, Match.id))
+    return list(result.unique().scalars().all())
+
+
+async def get_matches_scheduled_between(
+    db: AsyncSession, season_id: uuid.UUID, start: datetime, end: datetime
+) -> list[Match]:
+    """A season's matches scheduled inside a half-open [start, end) window.
+
+    Cancelled matches are excluded: a cancelled fixture is not something to put
+    in front of visitors as this week's schedule. An administrator who wants one
+    shown anyway can feature it explicitly.
+    """
+    stmt = (
+        _with_participants(select(Match))
+        .where(
+            Match.season_id == season_id,
+            Match.status != MatchStatus.CANCELLED,
+            Match.scheduled_at.is_not(None),
+            Match.scheduled_at >= start,
+            Match.scheduled_at < end,
+        )
+        .order_by(Match.scheduled_at, Match.id)
+    )
+    result = await db.execute(stmt)
+    return list(result.unique().scalars().all())
+
+
+async def get_featured_matches(db: AsyncSession) -> list[Match]:
+    """Matches an administrator has pinned to the homepage.
+
+    Deliberately unfiltered by season, date or status - featuring a match is an
+    explicit statement that it should appear whatever its dates say. Ordering is
+    the administrator's own `homepage_feature_order`; matches without one sort
+    after those that have one, then by schedule and id so the list never
+    reshuffles between requests.
+    """
+    stmt = (
+        _with_participants(select(Match))
+        .where(Match.featured_on_homepage.is_(True))
+        .order_by(
+            Match.homepage_feature_order.nullslast(),
+            Match.scheduled_at.nullslast(),
+            Match.id,
+        )
+    )
+    result = await db.execute(stmt)
     return list(result.unique().scalars().all())
 
 

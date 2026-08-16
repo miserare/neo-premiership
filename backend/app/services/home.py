@@ -1,7 +1,8 @@
-from datetime import date
+from datetime import date, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.crud import announcements as announcement_crud
 from app.crud import matches as match_crud
 from app.crud import season_entries as season_entry_crud
@@ -10,8 +11,10 @@ from app.models.match import Match
 from app.models.season import Season
 from app.models.site_links import SiteLinks
 from app.schemas.announcement import AnnouncementRead
-from app.schemas.home import HomeLink, HomeResponse, HomeSeasonInfo
+from app.schemas.home import HomeFixtures, HomeLink, HomeResponse, HomeSeasonInfo
 from app.schemas.player import PlayerSummary
+from app.services.league_week import current_league_week
+from app.services.matches import to_match_read
 from app.services.seasons import get_current_season
 
 
@@ -50,12 +53,49 @@ def _resolve_table(links: SiteLinks, season: Season | None) -> HomeLink | None:
     if pinned is not None:
         return pinned
     if season is not None:
-        # Internal by default: the season's own standings page.
-        return HomeLink(url=f"/seasons/{season.id}", label=f"View {season.name} table", external=False)
+        # Internal by default: the season's own standings page, at its canonical
+        # slug rather than its UUID.
+        return HomeLink(
+            url=f"/seasons/{season.slug}/standings", label=f"View {season.name} table", external=False
+        )
     return None
 
 
-async def build_home_response(db: AsyncSession, today: date | None = None) -> HomeResponse:
+async def build_fixtures(
+    db: AsyncSession, season: Season | None, now: datetime | None = None
+) -> HomeFixtures:
+    """Featured matches, and the current league week's fixtures for `season`.
+
+    A featured match is included whatever week it falls in and whatever its
+    status, because featuring it is an explicit administrator decision. It is
+    then removed from the weekly list so it cannot be shown twice.
+    """
+    week_start, week_end = current_league_week(now)
+    featured = await match_crud.get_featured_matches(db)
+    featured_ids = {match.id for match in featured}
+
+    this_week: list[Match] = []
+    if season is not None:
+        this_week = [
+            match
+            for match in await match_crud.get_matches_scheduled_between(
+                db, season.id, week_start, week_end
+            )
+            if match.id not in featured_ids
+        ]
+
+    return HomeFixtures(
+        week_start=week_start,
+        week_end=week_end,
+        timezone=settings.league_timezone,
+        featured=[to_match_read(match) for match in featured],
+        this_week=[to_match_read(match) for match in this_week],
+    )
+
+
+async def build_home_response(
+    db: AsyncSession, today: date | None = None, now: datetime | None = None
+) -> HomeResponse:
     announcements = await announcement_crud.get_recent_announcements(db)
     stream_match = await match_crud.get_most_recent_stream_match(db)
     season, is_active = await get_current_season(db, today)
@@ -66,6 +106,7 @@ async def build_home_response(db: AsyncSession, today: date | None = None) -> Ho
         roster_entries = await season_entry_crud.get_roster(db, season.id)
         current_season_info = HomeSeasonInfo(
             id=season.id,
+            slug=season.slug,
             name=season.name,
             is_active=is_active,
             sheet_url=season.sheet_url,
@@ -78,4 +119,5 @@ async def build_home_response(db: AsyncSession, today: date | None = None) -> Ho
         document=_resolve_document(links, season),
         table=_resolve_table(links, season),
         current_season=current_season_info,
+        fixtures=await build_fixtures(db, season, now),
     )

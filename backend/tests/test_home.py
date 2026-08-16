@@ -11,13 +11,20 @@ async def test_home_empty_database(client: AsyncClient) -> None:
     response = await client.get("/api/home")
 
     assert response.status_code == 200
-    assert response.json() == {
+    body = response.json()
+    fixtures = body.pop("fixtures")
+    assert body == {
         "announcements": [],
         "latest_stream": None,
         "document": None,
         "table": None,
         "current_season": None,
     }
+    # An empty league still reports which week it looked at, so the page can say
+    # "no fixtures this week" rather than rendering nothing at all.
+    assert fixtures["featured"] == []
+    assert fixtures["this_week"] == []
+    assert fixtures["timezone"] == "America/New_York"
 
 
 async def test_home_active_season_roster(client: AsyncClient, db_session: AsyncSession) -> None:

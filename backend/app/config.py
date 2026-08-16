@@ -3,6 +3,7 @@ from functools import lru_cache
 from typing import Annotated
 from pathlib import Path
 from urllib.parse import quote_plus
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
@@ -113,6 +114,16 @@ class Settings(BaseSettings):
     # otherwise a client could spoof its source address past IP throttling.
     trust_proxy_headers: bool = False
 
+    # --- League calendar ---------------------------------------------------
+    # The zone the league's week is measured in. The homepage's "this week"
+    # fixtures must not depend on where the server happens to be: a match at
+    # 04:00 UTC on Saturday is Friday evening for the league, and which week it
+    # belongs to has to be the same answer on every machine.
+    #
+    # A week runs Monday 00:00:00 up to (not including) the next Monday
+    # 00:00:00, in this zone. Both ends are documented in README.md.
+    league_timezone: str = "America/New_York"
+
     # --- API documentation -------------------------------------------------
     # Swagger/ReDoc/openapi.json describe every admin route. Off in production.
     docs_enabled: bool | None = None
@@ -156,6 +167,16 @@ class Settings(BaseSettings):
         return [self.domain, f"www.{self.domain}"]
 
     # ------------------------------------------------------------ validators
+
+    @field_validator("league_timezone")
+    @classmethod
+    def _known_timezone(cls, value: str) -> str:
+        """Fail at startup, not on the first homepage request."""
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError(f"LEAGUE_TIMEZONE {value!r} is not a known IANA time zone") from exc
+        return value
 
     @field_validator("cors_origins", mode="before")
     @classmethod

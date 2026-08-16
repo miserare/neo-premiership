@@ -39,7 +39,7 @@ async def test_overrides_replace_the_derived_home_links(
     # Derived first: document comes from the season sheet, table points inward.
     before = (await client.get("/api/home")).json()
     assert before["document"]["url"] == "https://docs.google.com/spreadsheets/derived"
-    assert before["table"]["url"] == f"/seasons/{season.id}"
+    assert before["table"]["url"] == f"/seasons/{season.slug}/standings"
     assert before["table"]["external"] is False
 
     await client.put(

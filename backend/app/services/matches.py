@@ -75,6 +75,8 @@ def to_match_read(match: Match) -> MatchRead:
         away_score=match.away_score,
         replay_url=match.replay_url,
         youtube_url=match.youtube_url,
+        featured_on_homepage=match.featured_on_homepage,
+        homepage_feature_order=match.homepage_feature_order,
         games=games,
         series=MatchSeries(home_wins=home_wins, away_wins=away_wins, game_count=len(games)),
         home_team=[

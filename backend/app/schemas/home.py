@@ -1,8 +1,10 @@
 import uuid
+from datetime import datetime
 
 from pydantic import BaseModel
 
 from app.schemas.announcement import AnnouncementRead
+from app.schemas.match import MatchRead
 from app.schemas.player import PlayerSummary
 
 
@@ -21,10 +23,31 @@ class HomeLink(BaseModel):
 
 class HomeSeasonInfo(BaseModel):
     id: uuid.UUID
+    slug: str
     name: str
     is_active: bool
     sheet_url: str | None
     roster: list[PlayerSummary]
+
+
+class HomeFixtures(BaseModel):
+    """This week's matches, plus whatever an administrator has pinned.
+
+    Two lists rather than one merged list: they are different claims. `this_week`
+    is a fact about the calendar, `featured` is an editorial decision. A featured
+    match that also falls in the current week appears only in `featured`, so
+    nothing is rendered twice.
+
+    `week_start`/`week_end` are the half-open UTC bounds actually used, and
+    `timezone` is the league zone they were derived in - so the page can say
+    which week it is showing rather than leaving the visitor to guess.
+    """
+
+    week_start: datetime
+    week_end: datetime
+    timezone: str
+    featured: list[MatchRead]
+    this_week: list[MatchRead]
 
 
 class HomeResponse(BaseModel):
@@ -34,3 +57,4 @@ class HomeResponse(BaseModel):
     document: HomeLink | None
     table: HomeLink | None
     current_season: HomeSeasonInfo | None
+    fixtures: HomeFixtures

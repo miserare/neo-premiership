@@ -69,6 +69,8 @@ class MatchRead(BaseModel):
     away_score: int | None
     replay_url: str | None
     youtube_url: str | None
+    featured_on_homepage: bool
+    homepage_feature_order: int | None
     games: list[MatchGameRead]
     series: MatchSeries
     home_team: list[MatchPokemonRead]
@@ -93,6 +95,8 @@ class MatchCreate(BaseModel):
     winner_id: uuid.UUID | None = None
     replay_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
+    featured_on_homepage: bool = False
+    homepage_feature_order: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _validate(self) -> "MatchCreate":
@@ -130,6 +134,8 @@ class MatchUpdate(BaseModel):
     winner_id: uuid.UUID | None = None
     replay_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
+    featured_on_homepage: bool | None = None
+    homepage_feature_order: int | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")
     def _validate_timestamps(self) -> "MatchUpdate":
