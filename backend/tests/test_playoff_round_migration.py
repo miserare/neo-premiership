@@ -13,6 +13,7 @@ Without it these tests skip, so the SQLite-only suite still runs anywhere.
 """
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -28,12 +29,17 @@ pytestmark = pytest.mark.skipif(
 
 # The revision immediately before the one under test.
 LEGACY_REVISION = "f3d9e2a4c711"
+ROUND_REVISION = "e4a7c2b8d5f1"
 
 
 def _alembic(command: list[str], url: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "ENVIRONMENT": "development", "DATABASE_URL": url}
     return subprocess.run(
-        ["alembic", *command], cwd=BACKEND_ROOT, env=env, capture_output=True, text=True
+        [sys.executable, "-m", "alembic", *command],
+        cwd=BACKEND_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
     )
 
 
@@ -144,7 +150,7 @@ async def test_legacy_season_two_becomes_first_round_semifinal_final() -> None:
     await _reset_to_legacy_schema(MIGRATION_DB_URL)
     await _seed_legacy_season_two(MIGRATION_DB_URL)
 
-    result = _alembic(["upgrade", "head"], MIGRATION_DB_URL)
+    result = _alembic(["upgrade", ROUND_REVISION], MIGRATION_DB_URL)
     assert result.returncode == 0, result.stderr
 
     rounds = await _fetch(
@@ -179,7 +185,7 @@ async def test_migration_preserves_everything_it_does_not_own() -> None:
     await _reset_to_legacy_schema(MIGRATION_DB_URL)
     await _seed_legacy_season_two(MIGRATION_DB_URL)
 
-    result = _alembic(["upgrade", "head"], MIGRATION_DB_URL)
+    result = _alembic(["upgrade", ROUND_REVISION], MIGRATION_DB_URL)
     assert result.returncode == 0, result.stderr
 
     counts = await _fetch(
@@ -233,7 +239,7 @@ async def test_migration_refuses_to_guess_and_changes_nothing() -> None:
         )
     await engine.dispose()
 
-    result = _alembic(["upgrade", "head"], MIGRATION_DB_URL)
+    result = _alembic(["upgrade", ROUND_REVISION], MIGRATION_DB_URL)
 
     assert result.returncode != 0
     assert "Ronda Uno" in result.stderr
@@ -279,7 +285,7 @@ async def test_migration_keeps_an_order_that_is_already_stored() -> None:
         )
     await engine.dispose()
 
-    result = _alembic(["upgrade", "head"], MIGRATION_DB_URL)
+    result = _alembic(["upgrade", ROUND_REVISION], MIGRATION_DB_URL)
     assert result.returncode == 0, result.stderr
 
     rounds = await _fetch(

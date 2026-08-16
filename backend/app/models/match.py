@@ -33,6 +33,7 @@ class Match(Base):
     __tablename__ = "matches"
     __table_args__ = (
         CheckConstraint("home_player_id != away_player_id", name="ck_matches_distinct_players"),
+        CheckConstraint("best_of IN (1, 3, 5, 7, 9)", name="ck_matches_supported_best_of"),
         CheckConstraint("bracket_order IS NULL OR bracket_order > 0", name="ck_matches_bracket_order_positive"),
         CheckConstraint(
             "homepage_feature_order IS NULL OR homepage_feature_order > 0",
@@ -117,6 +118,10 @@ class Match(Base):
 
     scheduled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # Explicit series format. It is recorded when the fixture is scheduled and
+    # is never inferred from however many games happen to have been entered.
+    best_of: Mapped[int] = mapped_column(Integer, default=1, server_default="1", nullable=False)
 
     home_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     away_score: Mapped[int | None] = mapped_column(Integer, nullable=True)

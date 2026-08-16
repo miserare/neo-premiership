@@ -103,6 +103,7 @@ jobs:
         run: |
           python -m pytest tests/test_playoff_round_migration.py -q
           python -m pytest tests/test_slug_migration.py -q
+          python -m pytest tests/test_series_score_migration.py -q
 
   frontend:
     name: Frontend lint, tests, typecheck and build

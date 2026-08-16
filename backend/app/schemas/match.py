@@ -13,13 +13,19 @@ class MatchGameRead(BaseModel):
 
     id: uuid.UUID | None
     game_number: int
+    completed_at: datetime | None
     winner_id: uuid.UUID | None
+    home_pokemon_score: int | None
+    away_pokemon_score: int | None
     replay_url: str | None
 
 
 class MatchGameInput(BaseModel):
     game_number: int = Field(..., ge=1, le=9)
+    completed_at: datetime | None = None
     winner_id: uuid.UUID | None = None
+    home_pokemon_score: int | None = Field(default=None, ge=0, le=6)
+    away_pokemon_score: int | None = Field(default=None, ge=0, le=6)
     replay_url: HttpUrl | None = None
 
 
@@ -40,9 +46,10 @@ class MatchSeries(BaseModel):
     """Series tally derived from the individual games, so a best-of-three reads
     as "2-1" without anyone maintaining a separate score field."""
 
-    home_wins: int
-    away_wins: int
+    home_series_wins: int
+    away_series_wins: int
     game_count: int
+    wins_required: int
 
 
 class MatchRead(BaseModel):
@@ -65,8 +72,7 @@ class MatchRead(BaseModel):
     round_order: int | None
     scheduled_at: datetime | None
     completed_at: datetime | None
-    home_score: int | None
-    away_score: int | None
+    best_of: int
     replay_url: str | None
     youtube_url: str | None
     featured_on_homepage: bool
@@ -83,6 +89,7 @@ class MatchCreate(BaseModel):
     away_player_id: uuid.UUID
     stage: MatchStage
     status: MatchStatus = MatchStatus.SCHEDULED
+    best_of: int = Field(default=1)
     playoff_round_id: uuid.UUID | None = None
     bracket_order: int | None = Field(default=None, gt=0)
     # Group-stage label only ("Group A", "Group - Matchday 1"). A playoff
@@ -90,8 +97,8 @@ class MatchCreate(BaseModel):
     round_label: str | None = Field(default=None, max_length=64)
     scheduled_at: datetime | None = None
     completed_at: datetime | None = None
-    home_score: int | None = None
-    away_score: int | None = None
+    # Legacy parent score columns are deliberately absent: they are retained in
+    # the database for rollback only, never accepted as an API score.
     winner_id: uuid.UUID | None = None
     replay_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
@@ -102,6 +109,8 @@ class MatchCreate(BaseModel):
     def _validate(self) -> "MatchCreate":
         if self.home_player_id == self.away_player_id:
             raise ValueError("home_player_id and away_player_id must be different players")
+        if self.best_of not in (1, 3, 5, 7, 9):
+            raise ValueError("best_of must be one of 1, 3, 5, 7, or 9")
         if self.stage == MatchStage.GROUP and self.playoff_round_id is not None:
             raise ValueError("a group-stage match must not reference a playoff round")
         if self.stage == MatchStage.PLAYOFFS and self.round_label is not None:
@@ -122,6 +131,7 @@ class MatchUpdate(BaseModel):
     recreate the match if they need to change."""
 
     status: MatchStatus | None = None
+    best_of: int | None = None
     # Setting playoff_round_id moves the match between rounds; the router
     # validates the move against the match's stage and season.
     playoff_round_id: uuid.UUID | None = None
@@ -129,8 +139,6 @@ class MatchUpdate(BaseModel):
     round_label: str | None = Field(default=None, max_length=64)
     scheduled_at: datetime | None = None
     completed_at: datetime | None = None
-    home_score: int | None = None
-    away_score: int | None = None
     winner_id: uuid.UUID | None = None
     replay_url: HttpUrl | None = None
     youtube_url: HttpUrl | None = None
@@ -139,6 +147,8 @@ class MatchUpdate(BaseModel):
 
     @model_validator(mode="after")
     def _validate_timestamps(self) -> "MatchUpdate":
+        if self.best_of is not None and self.best_of not in (1, 3, 5, 7, 9):
+            raise ValueError("best_of must be one of 1, 3, 5, 7, or 9")
         if self.completed_at is not None and self.completed_at.utcoffset() is None:
             raise ValueError("completed_at must include a timezone")
         return self
@@ -156,8 +166,25 @@ class MatchResultGameInput(BaseModel):
     """
 
     game_number: int = Field(..., ge=1, le=9)
-    winner_id: uuid.UUID
+    completed_at: datetime
+    winner_id: uuid.UUID | None = None
+    home_pokemon_score: int = Field(..., ge=0, le=6)
+    away_pokemon_score: int = Field(..., ge=0, le=6)
     replay_url: HttpUrl | None = None
+
+    @model_validator(mode="after")
+    def _validate_game(self) -> "MatchResultGameInput":
+        if self.completed_at.utcoffset() is None:
+            raise ValueError("completed_at must include a timezone")
+        scores = (self.home_pokemon_score, self.away_pokemon_score)
+        if not (
+            (1 <= scores[0] <= 6 and scores[1] == 0)
+            or (1 <= scores[1] <= 6 and scores[0] == 0)
+        ):
+            raise ValueError(
+                "Pokémon score must have one winner from 1 through 6 and one loser at 0"
+            )
+        return self
 
 
 class MatchResultSet(BaseModel):
@@ -172,6 +199,7 @@ class MatchResultSet(BaseModel):
     # Only these two: cancelling a match stays on the existing PATCH endpoint,
     # which is also where the cancellation reasons and corrections already live.
     status: MatchStatus = MatchStatus.COMPLETED
+    best_of: int
     completed_at: datetime | None = None
     games: list[MatchResultGameInput] = Field(default_factory=list, max_length=9)
     # Teams as actually used. Sent every time so a result save is a complete
@@ -188,6 +216,12 @@ class MatchResultSet(BaseModel):
         numbers = [game.game_number for game in self.games]
         if len(numbers) != len(set(numbers)):
             raise ValueError("game_number must be unique within a match")
+        if self.best_of not in (1, 3, 5, 7, 9):
+            raise ValueError("best_of must be one of 1, 3, 5, 7, or 9")
+        if sorted(numbers) != list(range(1, len(numbers) + 1)):
+            raise ValueError("game numbers must be contiguous and begin at 1")
+        if len(self.games) > self.best_of:
+            raise ValueError("a series cannot contain more games than its best_of format")
 
         for team in (self.home_team, self.away_team):
             ids = [pokemon.pokeapi_id for pokemon in team]

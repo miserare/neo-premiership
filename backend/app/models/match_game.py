@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -18,7 +19,16 @@ class MatchGame(Base):
     a series shows G1/G2/G3 links rather than one ambiguous "replay"."""
 
     __tablename__ = "match_games"
-    __table_args__ = (UniqueConstraint("match_id", "game_number", name="uq_match_games_match_game"),)
+    __table_args__ = (
+        UniqueConstraint("match_id", "game_number", name="uq_match_games_match_game"),
+        CheckConstraint("game_number > 0", name="ck_match_games_number_positive"),
+        CheckConstraint(
+            "(home_pokemon_score IS NULL AND away_pokemon_score IS NULL) OR "
+            "(home_pokemon_score BETWEEN 1 AND 6 AND away_pokemon_score = 0) OR "
+            "(away_pokemon_score BETWEEN 1 AND 6 AND home_pokemon_score = 0)",
+            name="ck_match_games_valid_pokemon_score",
+        ),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
     match_id: Mapped[uuid.UUID] = mapped_column(
@@ -29,6 +39,9 @@ class MatchGame(Base):
     winner_id: Mapped[uuid.UUID | None] = mapped_column(
         GUID(), ForeignKey("players.id", ondelete="SET NULL"), nullable=True
     )
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    home_pokemon_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    away_pokemon_score: Mapped[int | None] = mapped_column(Integer, nullable=True)
     replay_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
 
     match: Mapped["Match"] = relationship("Match", back_populates="games", lazy="raise")

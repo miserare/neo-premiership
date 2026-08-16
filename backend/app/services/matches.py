@@ -25,7 +25,15 @@ def _games_for(match: Match) -> list[MatchGameRead]:
         return [MatchGameRead.model_validate(game) for game in match.games]
     if match.replay_url is not None:
         return [
-            MatchGameRead(id=None, game_number=1, winner_id=match.winner_id, replay_url=match.replay_url)
+            MatchGameRead(
+                id=None,
+                game_number=1,
+                completed_at=match.completed_at,
+                winner_id=match.winner_id,
+                home_pokemon_score=match.home_score,
+                away_pokemon_score=match.away_score,
+                replay_url=match.replay_url,
+            )
         ]
     return []
 
@@ -73,14 +81,18 @@ def to_match_read(match: Match) -> MatchRead:
         round_order=round_order,
         scheduled_at=match.scheduled_at,
         completed_at=match.completed_at,
-        home_score=match.home_score,
-        away_score=match.away_score,
+        best_of=match.best_of,
         replay_url=match.replay_url,
         youtube_url=match.youtube_url,
         featured_on_homepage=match.featured_on_homepage,
         homepage_feature_order=match.homepage_feature_order,
         games=games,
-        series=MatchSeries(home_wins=home_wins, away_wins=away_wins, game_count=len(games)),
+        series=MatchSeries(
+            home_series_wins=home_wins,
+            away_series_wins=away_wins,
+            game_count=len(games),
+            wins_required=match.best_of // 2 + 1,
+        ),
         home_team=[
             MatchPokemonRead.model_validate(p) for p in match.pokemon if p.player_id == match.home_player_id
         ],
@@ -93,12 +105,12 @@ def to_match_read(match: Match) -> MatchRead:
 def derive_series_result(
     match: Match, game_winner_ids: Sequence[uuid.UUID]
 ) -> tuple[int, int, uuid.UUID | None]:
-    """(home_score, away_score, winner_id) implied by who won each game.
+    """(home_series_wins, away_series_wins, winner_id) from game winners.
 
-    The single source of truth for a match's score and winner. Nothing asks an
-    administrator to type the series score alongside the games and then hope the
-    two agree - a level series simply has no winner, which is what lets the
-    result endpoint refuse to mark it completed.
+    The single source of truth for a match's series tally and winner. Nothing
+    asks an administrator to type the series tally alongside the games and then
+    hope the two agree - a level series simply has no winner, which is what lets
+    the result endpoint refuse to mark it completed.
     """
     home_wins = sum(1 for winner_id in game_winner_ids if winner_id == match.home_player_id)
     away_wins = sum(1 for winner_id in game_winner_ids if winner_id == match.away_player_id)

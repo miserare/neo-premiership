@@ -180,6 +180,21 @@ async def create_match(db: AsyncSession, match_in: MatchCreate) -> Match:
     db.add(match)
     await _sync_legacy_round_columns(db, match)
     await db.flush()
+    # Compatibility for older administrative clients that created a completed
+    # BO1 directly. It becomes one explicit game event (with an unknown legacy
+    # Pokémon score) rather than a parent-level Elo event. New result entry
+    # always uses save_match_result and requires the score.
+    if match.status == MatchStatus.COMPLETED and match.winner_id is not None:
+        db.add(
+            MatchGame(
+                match_id=match.id,
+                game_number=1,
+                completed_at=match.completed_at,
+                winner_id=match.winner_id,
+                replay_url=match.replay_url,
+            )
+        )
+        await db.flush()
     await recalculate_elo_ratings(db)
     await db.commit()
     loaded = await get_match_by_id(db, match.id)
@@ -191,6 +206,11 @@ async def update_match(db: AsyncSession, match: Match, match_in: MatchUpdate) ->
     data = stringify_urls(match_in.model_dump(exclude_unset=True), _URL_FIELDS)
     for field, value in data.items():
         setattr(match, field, value)
+    if match.best_of == 1 and len(match.games) == 1:
+        if "winner_id" in data:
+            match.games[0].winner_id = match.winner_id
+        if "completed_at" in data:
+            match.games[0].completed_at = match.completed_at
     if "playoff_round_id" in data:
         await _sync_legacy_round_columns(db, match)
     await db.flush()
@@ -210,8 +230,6 @@ async def save_match_result(
     match: Match,
     result_in: MatchResultSet,
     *,
-    home_score: int | None,
-    away_score: int | None,
     winner_id: uuid.UUID | None,
 ) -> Match:
     """Write a match's games, both teams, status and derived result atomically.
@@ -239,6 +257,9 @@ async def save_match_result(
                     match_id=match.id,
                     game_number=game.game_number,
                     winner_id=game.winner_id,
+                    completed_at=game.completed_at,
+                    home_pokemon_score=game.home_pokemon_score,
+                    away_pokemon_score=game.away_pokemon_score,
                     replay_url=str(game.replay_url) if game.replay_url is not None else None,
                 )
             )
@@ -257,10 +278,15 @@ async def save_match_result(
                 )
 
         match.status = result_in.status
+        match.best_of = result_in.best_of
         match.completed_at = result_in.completed_at
         match.winner_id = winner_id
-        match.home_score = home_score
-        match.away_score = away_score
+        # Legacy parent columns represented a single game's Pokémon score.
+        # Mirror only a best-of-one so rollback remains truthful; never put a
+        # multi-game series tally into these ambiguous historical columns.
+        only_game = result_in.games[0] if result_in.best_of == 1 and result_in.games else None
+        match.home_score = only_game.home_pokemon_score if only_game is not None else None
+        match.away_score = only_game.away_pokemon_score if only_game is not None else None
         match.youtube_url = str(result_in.youtube_url) if result_in.youtube_url is not None else None
 
         await db.flush()

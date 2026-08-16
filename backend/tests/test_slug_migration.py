@@ -11,6 +11,7 @@ Without it these tests skip.
 
 import os
 import subprocess
+import sys
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -33,7 +34,11 @@ SLUG_REVISION = "b8e1d3a67c25"
 def _alembic(command: list[str], url: str) -> subprocess.CompletedProcess:
     env = {**os.environ, "ENVIRONMENT": "development", "DATABASE_URL": url}
     return subprocess.run(
-        ["alembic", *command], cwd=BACKEND_ROOT, env=env, capture_output=True, text=True
+        [sys.executable, "-m", "alembic", *command],
+        cwd=BACKEND_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
     )
 
 

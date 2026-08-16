@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match_game import MatchGame
 from app.schemas.match import MatchGamesSet
+from app.services.elo import recalculate_elo_ratings
 
 
 async def replace_games(db: AsyncSession, match_id: uuid.UUID, games_in: MatchGamesSet) -> None:
@@ -14,14 +15,24 @@ async def replace_games(db: AsyncSession, match_id: uuid.UUID, games_in: MatchGa
     constraint makes in-place renumbering order-dependent, and a series is at
     most a handful of rows.
     """
-    await db.execute(delete(MatchGame).where(MatchGame.match_id == match_id))
-    for game in games_in.games:
-        db.add(
-            MatchGame(
-                match_id=match_id,
-                game_number=game.game_number,
-                winner_id=game.winner_id,
-                replay_url=str(game.replay_url) if game.replay_url is not None else None,
+    try:
+        await db.execute(delete(MatchGame).where(MatchGame.match_id == match_id))
+        await db.flush()
+        for game in games_in.games:
+            db.add(
+                MatchGame(
+                    match_id=match_id,
+                    game_number=game.game_number,
+                    winner_id=game.winner_id,
+                    completed_at=game.completed_at,
+                    home_pokemon_score=game.home_pokemon_score,
+                    away_pokemon_score=game.away_pokemon_score,
+                    replay_url=str(game.replay_url) if game.replay_url is not None else None,
+                )
             )
-        )
-    await db.commit()
+        await db.flush()
+        await recalculate_elo_ratings(db)
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise

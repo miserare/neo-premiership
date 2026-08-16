@@ -219,28 +219,64 @@ async def set_match_result(
 
     participants = (match.home_player_id, match.away_player_id)
     for game in result_in.games:
-        if game.winner_id not in participants:
+        if game.winner_id is not None and game.winner_id not in participants:
             raise HTTPException(
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail=f"game {game.game_number}: winner_id must be the home or away player",
             )
 
-    home_score, away_score, derived_winner_id = derive_series_result(
-        match, [game.winner_id for game in result_in.games]
+    game_winners: list[uuid.UUID] = []
+    wins_required = result_in.best_of // 2 + 1
+    running_home = 0
+    running_away = 0
+    for game in result_in.games:
+        derived_game_winner = (
+            match.home_player_id if game.home_pokemon_score > 0 else match.away_player_id
+        )
+        if game.winner_id is not None and game.winner_id != derived_game_winner:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"game {game.game_number}: winner_id is inconsistent with its Pokémon score",
+            )
+        game.winner_id = derived_game_winner
+        game_winners.append(derived_game_winner)
+        if derived_game_winner == match.home_player_id:
+            running_home += 1
+        else:
+            running_away += 1
+        if max(running_home, running_away) == wins_required and game.game_number != len(result_in.games):
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"game {game.game_number + 1}: the series was already decided",
+            )
+
+    home_series_wins, away_series_wins, derived_winner_id = derive_series_result(
+        match, game_winners
     )
 
-    if result_in.status == MatchStatus.COMPLETED and derived_winner_id is None:
+    if (
+        result_in.status == MatchStatus.COMPLETED
+        and max(home_series_wins, away_series_wins) != wins_required
+    ):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=(
-                f"This series is level at {home_score}-{away_score}. "
-                "A completed match needs a decisive result - add the deciding game, "
-                "or save it as scheduled while it is still in progress."
+                f"Series score is {home_series_wins}-{away_series_wins}; "
+                f"a best-of-{result_in.best_of} "
+                f"series is complete only when a player reaches {wins_required} wins."
             ),
         )
+    if (
+        result_in.status == MatchStatus.SCHEDULED
+        and max(home_series_wins, away_series_wins) >= wins_required
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="A series that has been clinched must be saved as completed.",
+        )
 
-    # A match still in progress has no winner yet, and no scores either: the
-    # per-game rows already carry the running tally.
+    # A series still in progress has no parent winner. Its game rows already
+    # carry the individual Pokémon scores and running series tally.
     if result_in.status == MatchStatus.COMPLETED:
         winner_id: uuid.UUID | None = derived_winner_id
     else:
@@ -250,8 +286,6 @@ async def set_match_result(
         db,
         match,
         result_in,
-        home_score=home_score if result_in.games else None,
-        away_score=away_score if result_in.games else None,
         winner_id=winner_id,
     )
     return to_match_read(updated)

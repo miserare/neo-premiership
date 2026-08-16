@@ -37,17 +37,27 @@ async def _match(db_session: AsyncSession, suffix: str = "") -> dict:
 def _result_body(built: dict, **overrides) -> dict:
     body = {
         "status": "completed",
+        "best_of": 3,
         "completed_at": COMPLETED_AT,
         "games": [
-            {"game_number": 1, "winner_id": str(built["home"].id), "replay_url": "https://example.invalid/g1"},
-            {"game_number": 2, "winner_id": str(built["away"].id), "replay_url": "https://example.invalid/g2"},
-            {"game_number": 3, "winner_id": str(built["home"].id), "replay_url": "https://example.invalid/g3"},
+            {"game_number": 1, "completed_at": "2025-03-01T19:40:00Z", "winner_id": str(built["home"].id), "home_pokemon_score": 6, "away_pokemon_score": 0, "replay_url": "https://example.invalid/g1"},
+            {"game_number": 2, "completed_at": "2025-03-01T19:50:00Z", "winner_id": str(built["away"].id), "home_pokemon_score": 0, "away_pokemon_score": 1, "replay_url": "https://example.invalid/g2"},
+            {"game_number": 3, "completed_at": "2025-03-01T20:00:00Z", "winner_id": str(built["home"].id), "home_pokemon_score": 2, "away_pokemon_score": 0, "replay_url": "https://example.invalid/g3"},
         ],
         "home_team": [{"pokeapi_id": 6, "species_name": "charizard"}],
         "away_team": [{"pokeapi_id": 9, "species_name": "blastoise"}],
         "youtube_url": "https://example.invalid/vod",
     }
     body.update(overrides)
+    for index, game in enumerate(body["games"]):
+        game.setdefault("completed_at", f"2025-03-01T19:{40 + index * 10:02d}:00Z")
+        winner = game.get("winner_id")
+        if winner == str(built["home"].id):
+            game.setdefault("home_pokemon_score", 1)
+            game.setdefault("away_pokemon_score", 0)
+        else:
+            game.setdefault("home_pokemon_score", 0)
+            game.setdefault("away_pokemon_score", 1)
     return body
 
 
@@ -88,9 +98,14 @@ async def test_the_series_score_and_winner_are_derived_not_supplied(
         )
     ).json()
 
-    assert body["series"] == {"home_wins": 2, "away_wins": 1, "game_count": 3}
-    assert body["home_score"] == 2
-    assert body["away_score"] == 1
+    assert body["series"] == {
+        "home_series_wins": 2,
+        "away_series_wins": 1,
+        "game_count": 3,
+        "wins_required": 2,
+    }
+    assert "home_score" not in body
+    assert "away_score" not in body
     assert body["winner_id"] == str(built["home"].id)
 
 
@@ -115,8 +130,8 @@ async def test_an_away_series_win_derives_the_away_player(
     ).json()
 
     assert body["winner_id"] == away
-    assert body["home_score"] == 0
-    assert body["away_score"] == 2
+    assert body["series"]["home_series_wins"] == 0
+    assert body["series"]["away_series_wins"] == 2
 
 
 async def test_saving_a_result_replaces_the_previous_one(
@@ -140,7 +155,8 @@ async def test_saving_a_result_replaces_the_previous_one(
         headers=ADMIN_HEADERS,
     )
 
-    assert corrected.json()["series"] == {"home_wins": 0, "away_wins": 2, "game_count": 2}
+    assert corrected.json()["series"]["home_series_wins"] == 0
+    assert corrected.json()["series"]["away_series_wins"] == 2
     assert corrected.json()["winner_id"] == str(built["away"].id)
     assert [p["species_name"] for p in corrected.json()["home_team"]] == ["pikachu"]
     # No orphaned rows from the previous save.
@@ -216,7 +232,7 @@ async def test_a_level_series_cannot_be_marked_completed(
     )
 
     assert response.status_code == 422
-    assert "level at 1-1" in response.json()["detail"]
+    assert "Series score is 1-1" in response.json()["detail"]
 
 
 async def test_a_completed_match_needs_at_least_one_game(
@@ -339,7 +355,7 @@ async def test_saving_a_result_requires_an_administrator(
 async def test_an_unknown_match_is_a_404(client: AsyncClient) -> None:
     response = await client.put(
         "/api/matches/00000000-0000-4000-8000-000000000000/result",
-        json={"status": "scheduled", "games": []},
+        json={"status": "scheduled", "best_of": 1, "games": []},
         headers=ADMIN_HEADERS,
     )
     assert response.status_code == 404
@@ -379,7 +395,8 @@ async def test_a_rejected_result_changes_nothing_at_all(
 
     after = (await client.get(f"/api/matches/{built['match'].id}")).json()
     assert len(after["games"]) == 3
-    assert after["series"] == {"home_wins": 2, "away_wins": 1, "game_count": 3}
+    assert after["series"]["home_series_wins"] == 2
+    assert after["series"]["away_series_wins"] == 1
     assert [p["species_name"] for p in after["home_team"]] == ["charizard"]
     assert after["status"] == "completed"
 
@@ -451,9 +468,10 @@ async def test_elo_is_written_once_the_result_lands(
     )
 
     home = (await client.get(f"/api/players/{built['home'].id}")).json()
-    assert home["elo_rating"] == 1032
-    assert len(home["elo_history"]) == 1
-    assert home["elo_history"][0]["rating_change"] == 32
+    assert home["elo_rating"] == 1027
+    assert len(home["elo_history"]) == 3
+    assert [event["game_number"] for event in reversed(home["elo_history"])] == [1, 2, 3]
+    assert home["elo_history"][0]["rating_change"] == 33
 
 
 async def test_correcting_a_result_rebuilds_elo(
@@ -482,10 +500,10 @@ async def test_correcting_a_result_rebuilds_elo(
     away = (await client.get(f"/api/players/{built['away'].id}")).json()
 
     # The result flipped, so the ratings flip with it - not 1032 minus something.
-    assert home["elo_rating"] == 968
-    assert away["elo_rating"] == 1032
-    assert len(home["elo_history"]) == 1
-    assert home["elo_history"][0]["rating_change"] == -32
+    assert home["elo_rating"] == 942
+    assert away["elo_rating"] == 1058
+    assert len(home["elo_history"]) == 2
+    assert home["elo_history"][0]["rating_change"] == -26
 
 
 async def test_correcting_an_earlier_result_replays_every_later_match(
@@ -516,10 +534,11 @@ async def test_correcting_an_earlier_result_replays_every_later_match(
     for match, when in ((first, "2025-01-10T20:00:00Z"), (second, "2025-02-10T20:00:00Z")):
         await client.put(
             f"/api/matches/{match.id}/result",
-            json={
-                "status": "completed",
-                "completed_at": when,
-                "games": [{"game_number": 1, "winner_id": str(alice.id)}],
+                json={
+                    "status": "completed",
+                    "best_of": 1,
+                    "completed_at": when,
+                    "games": [{"game_number": 1, "completed_at": when, "winner_id": str(alice.id), "home_pokemon_score": 1, "away_pokemon_score": 0}],
                 "home_team": [],
                 "away_team": [],
             },
@@ -535,8 +554,9 @@ async def test_correcting_an_earlier_result_replays_every_later_match(
         f"/api/matches/{first.id}/result",
         json={
             "status": "completed",
+            "best_of": 1,
             "completed_at": "2025-01-10T20:00:00Z",
-            "games": [{"game_number": 1, "winner_id": str(bob.id)}],
+            "games": [{"game_number": 1, "completed_at": "2025-01-10T20:00:00Z", "winner_id": str(bob.id), "home_pokemon_score": 0, "away_pokemon_score": 1}],
             "home_team": [],
             "away_team": [],
         },
@@ -559,7 +579,7 @@ async def test_a_scheduled_result_removes_the_match_from_elo(
 
     await client.put(
         f"/api/matches/{built['match'].id}/result",
-        json=_result_body(built, status="scheduled", completed_at=None),
+        json=_result_body(built, status="scheduled", completed_at=None, games=[]),
         headers=ADMIN_HEADERS,
     )
 

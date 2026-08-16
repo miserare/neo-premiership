@@ -64,7 +64,7 @@ async def test_set_games_derives_series_score(client: AsyncClient, db_session: A
 
     assert response.status_code == 200
     data = response.json()
-    assert data["series"] == {"home_wins": 2, "away_wins": 1, "game_count": 3}
+    assert data["series"] == {"home_series_wins": 2, "away_series_wins": 1, "game_count": 3, "wins_required": 1}
     assert [g["game_number"] for g in data["games"]] == [1, 2, 3]
     assert data["games"][0]["replay_url"] == "https://replay.test/g1"
 
@@ -151,7 +151,7 @@ async def test_legacy_replay_url_surfaces_as_a_single_game(
     assert len(data["games"]) == 1
     assert data["games"][0]["id"] is None  # synthesized, not a stored row
     assert data["games"][0]["replay_url"] == "https://replay.test/legacy"
-    assert data["series"] == {"home_wins": 1, "away_wins": 0, "game_count": 1}
+    assert data["series"] == {"home_series_wins": 1, "away_series_wins": 0, "game_count": 1, "wins_required": 1}
 
 
 async def test_set_match_team(client: AsyncClient, db_session: AsyncSession) -> None:
