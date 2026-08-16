@@ -19,6 +19,8 @@ afterEach(() => vi.clearAllMocks());
 function eloEvent(index: number): EloRatingHistoryEntry {
   return {
     match_id: `m${index}`,
+    match_game_id: `g${index}`,
+    game_number: 1,
     opponent_id: `o${index}`,
     opponent_slug: `rival-${index}`,
     opponent_username: `Rival ${index}`,
@@ -28,6 +30,8 @@ function eloEvent(index: number): EloRatingHistoryEntry {
     rating_before: 1000,
     rating_after: 1032,
     rating_change: 32,
+    player_pokemon_score: 3,
+    opponent_pokemon_score: 0,
   };
 }
 
@@ -114,6 +118,26 @@ describe("PlayerDetailPage", () => {
     );
   });
 
+  it("shows creator and champion markers together", async () => {
+    renderPlayer(
+      playerDetail({
+        is_site_creator: true,
+        championships: [
+          {
+            season_id: "s4",
+            season_slug: "4",
+            season_name: "Season 4",
+            start_date: "2025-06-14",
+            end_date: "2025-08-02",
+          },
+        ],
+      }),
+    );
+
+    expect(await screen.findByText("Champion")).toBeInTheDocument();
+    expect(screen.getByText("Site Creator")).toBeInTheDocument();
+  });
+
   it("shows no champion marker for a player who has won nothing", async () => {
     renderPlayer(playerDetail({ championships: [] }));
 
@@ -164,7 +188,7 @@ describe("PlayerDetailPage", () => {
       renderPlayer(playerDetail({ elo_history: Array.from({ length: 24 }, (_, i) => eloEvent(i)) }));
 
       const toggle = await screen.findByRole("button", {
-        name: "Show full Elo history (24 matches)",
+        name: "Show full Elo history (24 games)",
       });
       expect(toggle).toHaveAttribute("aria-expanded", "false");
     });
@@ -174,7 +198,7 @@ describe("PlayerDetailPage", () => {
       renderPlayer(playerDetail({ elo_history: Array.from({ length: 24 }, (_, i) => eloEvent(i)) }));
 
       await user.click(
-        await screen.findByRole("button", { name: "Show full Elo history (24 matches)" }),
+        await screen.findByRole("button", { name: "Show full Elo history (24 games)" }),
       );
 
       const section = screen.getByRole("heading", { name: "Elo History" }).closest("section");

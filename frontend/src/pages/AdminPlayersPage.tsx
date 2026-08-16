@@ -13,6 +13,7 @@ interface PlayerFormState {
   biography: string;
   discord_id: string;
   is_active: boolean;
+  is_site_creator: boolean;
   initial_elo_rating: string;
 }
 
@@ -22,6 +23,7 @@ const EMPTY_FORM: PlayerFormState = {
   biography: "",
   discord_id: "",
   is_active: true,
+  is_site_creator: false,
   initial_elo_rating: "",
 };
 
@@ -34,6 +36,7 @@ function toCreateInput(form: PlayerFormState) {
     biography: form.biography.trim() || null,
     discord_id: form.discord_id.trim() || null,
     is_active: form.is_active,
+    is_site_creator: form.is_site_creator,
     initial_elo_rating:
       form.initial_elo_rating.trim() === "" ? null : Number(form.initial_elo_rating),
   };
@@ -84,6 +87,7 @@ export default function AdminPlayersPage() {
       biography: player.biography ?? "",
       discord_id: player.discord_id ?? "",
       is_active: player.is_active,
+      is_site_creator: player.is_site_creator,
       initial_elo_rating: String(player.initial_elo_rating),
     });
   }
@@ -199,6 +203,20 @@ export default function AdminPlayersPage() {
               Active
             </label>
           </div>
+          <div className="admin-form__row admin-form__row--checkbox">
+            <label htmlFor="create-site-creator">
+              <input
+                id="create-site-creator"
+                type="checkbox"
+                checked={createForm.is_site_creator}
+                onChange={(event) =>
+                  setCreateForm({ ...createForm, is_site_creator: event.target.checked })
+                }
+              />
+              Site Creator
+            </label>
+            <p className="admin-form__hint">Only one non-placeholder player can hold this marker.</p>
+          </div>
           {mutation.errorFor("create") && (
             <p role="alert" className="admin-form__error">
               {mutation.errorFor("create")}
@@ -229,6 +247,7 @@ export default function AdminPlayersPage() {
                 <th>Starting Elo</th>
                 <th>Current Elo</th>
                 <th>Active</th>
+                <th>Site Creator</th>
                 <th></th>
               </tr>
             </thead>
@@ -236,7 +255,7 @@ export default function AdminPlayersPage() {
               {players.map((player) =>
                 editingId === player.id ? (
                   <tr key={player.id}>
-                    <td colSpan={7}>
+                    <td colSpan={8}>
                       <form className="admin-form admin-form--inline" onSubmit={handleSaveEdit}>
                         <input
                           aria-label="Username"
@@ -276,6 +295,16 @@ export default function AdminPlayersPage() {
                           />
                           Active
                         </label>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={editForm.is_site_creator}
+                            onChange={(event) =>
+                              setEditForm({ ...editForm, is_site_creator: event.target.checked })
+                            }
+                          />
+                          Site Creator
+                        </label>
                         <textarea
                           aria-label="Biography"
                           rows={3}
@@ -312,6 +341,7 @@ export default function AdminPlayersPage() {
                         {player.is_active ? "Active" : "Inactive"}
                       </span>
                     </td>
+                    <td>{player.is_site_creator ? "Yes" : "No"}</td>
                     <td className="admin-players-page__actions">
                       <button type="button" onClick={() => startEdit(player)}>
                         Edit

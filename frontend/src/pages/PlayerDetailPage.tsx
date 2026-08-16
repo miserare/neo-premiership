@@ -5,6 +5,7 @@ import Disclosure from "../components/Disclosure";
 import MatchList from "../components/MatchList";
 import PlainText from "../components/PlainText";
 import PokemonTeam from "../components/PokemonTeam";
+import SiteCreatorBadge from "../components/SiteCreatorBadge";
 import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { usePlayerDetail } from "../hooks/usePlayerDetail";
 import { formatDateTime } from "../lib/format";
@@ -21,6 +22,7 @@ function EloTable({ entries }: { entries: EloRatingHistoryEntry[] }) {
         <thead>
           <tr>
             <th>Date</th>
+            <th>Game</th>
             <th>Opponent</th>
             <th>Result</th>
             <th>Before</th>
@@ -30,8 +32,14 @@ function EloTable({ entries }: { entries: EloRatingHistoryEntry[] }) {
         </thead>
         <tbody>
           {entries.map((entry) => (
-            <tr key={entry.match_id}>
+            <tr key={entry.match_game_id}>
               <td>{formatDateTime(entry.occurred_at)}</td>
+              <td>
+                G{entry.game_number}
+                {entry.player_pokemon_score !== null && entry.opponent_pokemon_score !== null
+                  ? ` · ${entry.player_pokemon_score}–${entry.opponent_pokemon_score}`
+                  : " · Score not recorded"}
+              </td>
               <td>
                 <Link to={playerPath(entry.opponent_slug)}>{entry.opponent_username}</Link>
               </td>
@@ -87,6 +95,7 @@ export default function PlayerDetailPage() {
       </div>
 
       <ChampionBadge championships={player.championships} />
+      {player.is_site_creator && <SiteCreatorBadge />}
 
       {player.biography && (
         <PlainText className="player-page__biography">{player.biography}</PlainText>
@@ -121,14 +130,14 @@ export default function PlayerDetailPage() {
       <section aria-labelledby="elo-history-heading">
         <h2 id="elo-history-heading">Elo History</h2>
         {eloHistory.length === 0 ? (
-          <p>No Elo-rated matches yet.</p>
+          <p>No Elo-rated games yet.</p>
         ) : eloHistory.length <= PREVIEW_COUNT ? (
           // Nothing is hidden, so there is nothing to expand - a control here
           // would only ever be a no-op.
           <EloTable entries={eloHistory} />
         ) : (
           <Disclosure
-            showLabel={`Show full Elo history (${eloHistory.length} matches)`}
+            showLabel={`Show full Elo history (${eloHistory.length} games)`}
             hideLabel="Show recent five"
           >
             {(expanded) => (

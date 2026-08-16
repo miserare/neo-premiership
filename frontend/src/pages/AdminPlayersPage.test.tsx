@@ -18,6 +18,7 @@ function admin(overrides: Partial<PlayerAdmin> = {}): PlayerAdmin {
     elo_rating: 1000,
     discord_id: null,
     initial_elo_rating: 1000,
+    is_site_creator: false,
     ...overrides,
   };
 }

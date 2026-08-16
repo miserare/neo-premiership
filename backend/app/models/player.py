@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, DateTime, Integer, String, Text
+from sqlalchemy import Boolean, CheckConstraint, DateTime, Index, Integer, String, Text, text
 from sqlalchemy import false as sa_false
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -26,6 +26,16 @@ class Player(Base):
         # part uniqueness depends on - a stored slug is always lowercase and
         # non-empty, which makes the plain unique index below case-insensitive.
         CheckConstraint("slug = lower(slug) AND length(slug) > 0", name="ck_players_slug_lowercase"),
+        CheckConstraint(
+            "NOT (is_placeholder AND is_site_creator)", name="ck_players_placeholder_not_site_creator"
+        ),
+        Index(
+            "uq_players_single_site_creator",
+            "is_site_creator",
+            unique=True,
+            postgresql_where=text("is_site_creator"),
+            sqlite_where=text("is_site_creator = 1"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(GUID(), primary_key=True, default=uuid.uuid4)
@@ -47,6 +57,9 @@ class Player(Base):
     # reassigned to, so match history survives the deletion. Excluded from
     # player listings, standings, and every admin picker.
     is_placeholder: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=sa_false(), nullable=False
+    )
+    is_site_creator: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=sa_false(), nullable=False
     )
 

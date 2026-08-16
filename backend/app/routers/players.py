@@ -150,6 +150,11 @@ async def update_player(
     player = await crud.get_player_by_id(db, player_id)
     if player is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Player not found")
+    if player.is_placeholder and player_in.is_site_creator:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="The placeholder player cannot be marked as site creator",
+        )
     if player_in.username is not None and player_in.username != player.username:
         _reject_reserved_username(player_in.username)
         existing = await crud.get_player_by_username(db, player_in.username)
