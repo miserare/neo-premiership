@@ -4,6 +4,7 @@ from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.match import Match, MatchStage, MatchStatus
+from app.models.match_game import MatchGame
 from app.models.playoff_round import PlayoffRound
 from app.models.season_entry import SeasonEntry
 from tests.conftest import ADMIN_HEADERS, make_player, make_season
@@ -135,10 +136,93 @@ async def test_season_standings_use_only_completed_group_matches(
     by_username = {entry["player"]["username"]: entry for entry in standings}
     assert by_username["AliceStandings"]["wins"] == 1
     assert by_username["AliceStandings"]["losses"] == 0
+    assert by_username["AliceStandings"]["pokemon_differential"] is None
+    assert by_username["AliceStandings"]["pokemon_differential_complete"] is False
     assert by_username["BobStandings"]["wins"] == 0
     assert by_username["BobStandings"]["losses"] == 1
+    assert by_username["BobStandings"]["pokemon_differential"] is None
     assert by_username["CarolStandings"]["wins"] == 0
     assert by_username["CarolStandings"]["losses"] == 0
+    assert by_username["CarolStandings"]["pokemon_differential"] == 0
+
+
+async def test_standings_sort_by_pokemon_differential_before_legacy_tiebreaker(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    season = make_season(name="Differential Sort Season", start_date=date(2026, 1, 1))
+    narrow_winner = make_player(username="Narrow Winner")
+    narrow_loser = make_player(username="Narrow Loser")
+    wide_winner = make_player(username="Wide Winner")
+    wide_loser = make_player(username="Wide Loser")
+    db_session.add_all([season, narrow_winner, narrow_loser, wide_winner, wide_loser])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            SeasonEntry(
+                season_id=season.id,
+                player_id=narrow_winner.id,
+                group_label="A",
+                tiebreaker_value=100,
+            ),
+            SeasonEntry(season_id=season.id, player_id=narrow_loser.id, group_label="A"),
+            SeasonEntry(
+                season_id=season.id,
+                player_id=wide_winner.id,
+                group_label="A",
+                tiebreaker_value=-100,
+            ),
+            SeasonEntry(season_id=season.id, player_id=wide_loser.id, group_label="A"),
+        ]
+    )
+    narrow = Match(
+        season_id=season.id,
+        home_player_id=narrow_winner.id,
+        away_player_id=narrow_loser.id,
+        winner_id=narrow_winner.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+    )
+    wide = Match(
+        season_id=season.id,
+        home_player_id=wide_winner.id,
+        away_player_id=wide_loser.id,
+        winner_id=wide_winner.id,
+        status=MatchStatus.COMPLETED,
+        stage=MatchStage.GROUP,
+    )
+    db_session.add_all([narrow, wide])
+    await db_session.flush()
+    db_session.add_all(
+        [
+            MatchGame(
+                match_id=narrow.id,
+                game_number=1,
+                winner_id=narrow_winner.id,
+                home_pokemon_score=1,
+                away_pokemon_score=0,
+            ),
+            MatchGame(
+                match_id=wide.id,
+                game_number=1,
+                winner_id=wide_winner.id,
+                home_pokemon_score=6,
+                away_pokemon_score=0,
+            ),
+        ]
+    )
+    await db_session.commit()
+
+    response = await client.get(f"/api/seasons/{season.id}")
+
+    assert response.status_code == 200
+    standings = response.json()["standings"][0]["standings"]
+    assert [entry["player"]["username"] for entry in standings] == [
+        "Wide Winner",
+        "Narrow Winner",
+        "Narrow Loser",
+        "Wide Loser",
+    ]
+    assert [entry["pokemon_differential"] for entry in standings] == [6, 1, -1, -6]
 
 
 async def test_playoff_bracket_ordering(client: AsyncClient, db_session: AsyncSession) -> None:

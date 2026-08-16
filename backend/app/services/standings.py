@@ -12,19 +12,42 @@ from app.services.matches import to_match_read
 def build_standings(season_entries: list[SeasonEntry], group_matches: list[Match]) -> list[StandingsGroup]:
     wins: dict[uuid.UUID, int] = defaultdict(int)
     losses: dict[uuid.UUID, int] = defaultdict(int)
+    differential: dict[uuid.UUID, int] = defaultdict(int)
+    incomplete: set[uuid.UUID] = set()
     for match in group_matches:
         if match.status != MatchStatus.COMPLETED or match.winner_id is None:
             continue
         loser_id = match.away_player_id if match.winner_id == match.home_player_id else match.home_player_id
         wins[match.winner_id] += 1
         losses[loser_id] += 1
+        if not match.games:
+            incomplete.update((match.home_player_id, match.away_player_id))
+            continue
+        for game in match.games:
+            if game.winner_id is None:
+                continue
+            if game.home_pokemon_score is None or game.away_pokemon_score is None:
+                incomplete.update((match.home_player_id, match.away_player_id))
+                continue
+            game_diff = game.home_pokemon_score - game.away_pokemon_score
+            differential[match.home_player_id] += game_diff
+            differential[match.away_player_id] -= game_diff
 
     groups: dict[str | None, list[SeasonEntry]] = defaultdict(list)
     for entry in season_entries:
         groups[entry.group_label].append(entry)
 
     def sort_key(entry: SeasonEntry) -> tuple:
-        return (-wins[entry.player_id], losses[entry.player_id], -(entry.tiebreaker_value or 0), entry.player.username)
+        player_id = entry.player_id
+        return (
+            -wins[player_id],
+            losses[player_id],
+            player_id in incomplete,
+            -differential[player_id],
+            -(entry.tiebreaker_value or 0),
+            entry.player.username.casefold(),
+            str(player_id),
+        )
 
     result = [
         StandingsGroup(
@@ -34,6 +57,10 @@ def build_standings(season_entries: list[SeasonEntry], group_matches: list[Match
                     player=PlayerSummary.model_validate(entry.player),
                     wins=wins[entry.player_id],
                     losses=losses[entry.player_id],
+                    pokemon_differential=(
+                        None if entry.player_id in incomplete else differential[entry.player_id]
+                    ),
+                    pokemon_differential_complete=entry.player_id not in incomplete,
                     tiebreaker_value=entry.tiebreaker_value,
                 )
                 for entry in sorted(entries, key=sort_key)

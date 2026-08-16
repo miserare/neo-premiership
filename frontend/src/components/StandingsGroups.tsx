@@ -35,6 +35,7 @@ export default function StandingsGroups({
                   <th>Player</th>
                   <th>Wins</th>
                   <th>Losses</th>
+                  <th>Pokémon Diff</th>
                 </tr>
               </thead>
               <tbody>
@@ -45,6 +46,13 @@ export default function StandingsGroups({
                     </td>
                     <td>{entry.wins}</td>
                     <td>{entry.losses}</td>
+                    <td>
+                      {entry.pokemon_differential_complete && entry.pokemon_differential !== null
+                        ? entry.pokemon_differential > 0
+                          ? `+${entry.pokemon_differential}`
+                          : entry.pokemon_differential
+                        : "Not recorded"}
+                    </td>
                   </tr>
                 ))}
               </tbody>

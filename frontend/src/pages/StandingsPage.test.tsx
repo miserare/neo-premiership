@@ -32,8 +32,8 @@ function withStandings(overrides: Partial<SeasonDetail> = {}): SeasonDetail {
       {
         group_label: "Group A",
         standings: [
-          { player: alice, wins: 3, losses: 0, tiebreaker_value: null },
-          { player: bob, wins: 0, losses: 3, tiebreaker_value: null },
+          { player: alice, wins: 3, losses: 0, pokemon_differential: 8, pokemon_differential_complete: true, tiebreaker_value: null },
+          { player: bob, wins: 0, losses: 3, pokemon_differential: -8, pokemon_differential_complete: true, tiebreaker_value: null },
         ],
       },
     ],
@@ -126,7 +126,9 @@ describe("StandingsPage", () => {
       route: `/seasons/${uuid}/standings`,
     });
 
-    expect(await screen.findByTestId("landed-at")).toHaveTextContent("/seasons/1/standings");
+    await waitFor(() =>
+      expect(screen.getByTestId("landed-at")).toHaveTextContent("/seasons/1/standings"),
+    );
   });
 
   it("reports an empty season honestly", async () => {

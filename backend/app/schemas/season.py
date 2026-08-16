@@ -82,6 +82,9 @@ class StandingsEntry(BaseModel):
     player: PlayerSummary
     wins: int
     losses: int
+    pokemon_differential: int | None
+    pokemon_differential_complete: bool
+    # Retained only as the documented secondary/rollback tiebreaker.
     tiebreaker_value: float | None
 
 
@@ -126,4 +129,3 @@ class SeasonDetail(BaseModel):
     standings: list[StandingsGroup]
     bracket: list[BracketRound]
     streams: list[SeasonStream]
-

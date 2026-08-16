@@ -27,8 +27,8 @@ class SeasonEntry(Base):
         GUID(), ForeignKey("players.id", ondelete="CASCADE"), nullable=False, index=True
     )
     group_label: Mapped[str | None] = mapped_column(String(32), nullable=True)
-    # Manually supplied tie-break value for group standings (e.g. head-to-head
-    # points or game differential) - wins/losses are always derived from Match.
+    # Legacy manual secondary tie-break value. Pokémon differential is derived
+    # from MatchGame scores and is always considered first.
     tiebreaker_value: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     player: Mapped["Player"] = relationship("Player", lazy="raise")

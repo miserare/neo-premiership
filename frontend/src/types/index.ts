@@ -26,6 +26,7 @@ export interface PlayerAdmin extends Player {
   biography: string | null;
   discord_id: string | null;
   initial_elo_rating: number;
+  is_site_creator: boolean;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerCreate
@@ -37,6 +38,7 @@ export interface PlayerCreateInput {
   discord_id?: string | null;
   is_active?: boolean;
   initial_elo_rating?: number | null;
+  is_site_creator?: boolean;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerUpdate
@@ -48,6 +50,7 @@ export interface PlayerUpdateInput {
   discord_id?: string | null;
   is_active?: boolean;
   initial_elo_rating?: number | null;
+  is_site_creator?: boolean;
 }
 
 // Mirrors backend/app/schemas/player.py::PlayerSummary
@@ -79,6 +82,8 @@ export interface PlayerSeasonRecord {
 // Mirrors backend/app/schemas/player.py::EloRatingHistoryEntry
 export interface EloRatingHistoryEntry {
   match_id: string;
+  match_game_id: string;
+  game_number: number;
   opponent_id: string;
   opponent_slug: string;
   opponent_username: string;
@@ -88,6 +93,8 @@ export interface EloRatingHistoryEntry {
   rating_before: number;
   rating_after: number;
   rating_change: number;
+  player_pokemon_score: number | null;
+  opponent_pokemon_score: number | null;
 }
 
 // Mirrors backend/app/models/match.py::MatchStatus
@@ -129,7 +136,10 @@ export interface MatchPokemon {
 export interface MatchGameRead {
   id: string | null;
   game_number: number;
+  completed_at: string | null;
   winner_id: string | null;
+  home_pokemon_score: number | null;
+  away_pokemon_score: number | null;
   replay_url: string | null;
 }
 
@@ -142,9 +152,10 @@ export interface MatchGameInput {
 
 // Mirrors backend/app/schemas/match.py::MatchSeries
 export interface MatchSeries {
-  home_wins: number;
-  away_wins: number;
+  home_series_wins: number;
+  away_series_wins: number;
   game_count: number;
+  wins_required: number;
 }
 
 // Mirrors backend/app/schemas/match.py::MatchRead
@@ -164,8 +175,7 @@ export interface MatchRead {
   round_order: number | null;
   scheduled_at: string | null;
   completed_at: string | null;
-  home_score: number | null;
-  away_score: number | null;
+  best_of: 1 | 3 | 5 | 7 | 9;
   replay_url: string | null;
   youtube_url: string | null;
   /** Administrator highlighting. Explicit data, never inferred from dates. */
@@ -184,6 +194,7 @@ export interface MatchCreateInput {
   away_player_id: string;
   stage: MatchStage;
   status?: MatchStatus;
+  best_of: 1 | 3 | 5 | 7 | 9;
   /** Playoff matches only; a group match must leave this unset. */
   playoff_round_id?: string | null;
   bracket_order?: number | null;
@@ -192,8 +203,6 @@ export interface MatchCreateInput {
   scheduled_at?: string | null;
   completed_at?: string | null;
   winner_id?: string | null;
-  home_score?: number | null;
-  away_score?: number | null;
   youtube_url?: string | null;
   featured_on_homepage?: boolean;
   homepage_feature_order?: number | null;
@@ -203,14 +212,13 @@ export interface MatchCreateInput {
 // Season, participants, and stage are immutable after creation.
 export interface MatchUpdateInput {
   status?: MatchStatus;
+  best_of?: 1 | 3 | 5 | 7 | 9;
   playoff_round_id?: string | null;
   bracket_order?: number | null;
   round_label?: string | null;
   scheduled_at?: string | null;
   completed_at?: string | null;
   winner_id?: string | null;
-  home_score?: number | null;
-  away_score?: number | null;
   youtube_url?: string | null;
   featured_on_homepage?: boolean;
   homepage_feature_order?: number | null;
@@ -229,8 +237,10 @@ export interface ChampionshipRead {
 // Mirrors backend/app/schemas/match.py::MatchResultGameInput
 export interface MatchResultGameInput {
   game_number: number;
-  /** Required: a played game has a winner. Unplayed games are simply not sent. */
-  winner_id: string;
+  completed_at: string;
+  winner_id?: string | null;
+  home_pokemon_score: number;
+  away_pokemon_score: number;
   replay_url?: string | null;
 }
 
@@ -239,6 +249,7 @@ export interface MatchResultGameInput {
 // winners, so neither appears here.
 export interface MatchResultInput {
   status: "completed" | "scheduled";
+  best_of: 1 | 3 | 5 | 7 | 9;
   completed_at?: string | null;
   games: MatchResultGameInput[];
   home_team: PokemonInput[];
@@ -255,6 +266,7 @@ export interface PlayerDetail {
   join_date: string;
   is_active: boolean;
   elo_rating: number;
+  is_site_creator: boolean;
   /** Empty for the placeholder player even when a deleted champion's titles
    * were transferred to it. */
   championships: ChampionshipRead[];
@@ -352,6 +364,8 @@ export interface StandingsEntry {
   player: PlayerSummary;
   wins: number;
   losses: number;
+  pokemon_differential: number | null;
+  pokemon_differential_complete: boolean;
   tiebreaker_value: number | null;
 }
 

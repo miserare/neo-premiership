@@ -262,7 +262,7 @@ export default function AdminSeasonRosterPage() {
                 />
               </div>
               <div className="admin-form__row">
-                <label htmlFor="add-tiebreaker">Tiebreaker value</label>
+                <label htmlFor="add-tiebreaker">Legacy secondary tiebreaker</label>
                 <input
                   id="add-tiebreaker"
                   type="number"
@@ -291,7 +291,7 @@ export default function AdminSeasonRosterPage() {
                   <tr>
                     <th>Player</th>
                     <th>Group</th>
-                    <th>Tiebreaker</th>
+                    <th>Legacy tiebreaker</th>
                     <th>Current Pokémon</th>
                     <th></th>
                   </tr>
@@ -310,7 +310,7 @@ export default function AdminSeasonRosterPage() {
                               maxLength={32}
                             />
                             <input
-                              aria-label="Tiebreaker value"
+                              aria-label="Legacy secondary tiebreaker"
                               type="number"
                               step="any"
                               value={editForm.tiebreaker_value}
