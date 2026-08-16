@@ -1,17 +1,24 @@
-import { Link, useParams } from "react-router-dom";
+import { Link, Navigate, useParams } from "react-router-dom";
 
 import ExternalLink from "../components/ExternalLink";
 import MatchSeriesLinks from "../components/MatchSeriesLinks";
+import PlainText from "../components/PlainText";
 import PokemonTeam from "../components/PokemonTeam";
+import SeasonRoster from "../components/SeasonRoster";
+import StandingsGroups from "../components/StandingsGroups";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useSeasonDetail } from "../hooks/useSeasonDetail";
+import { formatDateRange } from "../lib/format";
+import { playerPath, seasonPath, seasonStandingsPath } from "../lib/routes";
 
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
+/** Does this reference look like a UUID rather than a slug? */
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export default function SeasonDetailPage() {
-  const { seasonId } = useParams<{ seasonId: string }>();
-  const { data: season, isLoading, error } = useSeasonDetail(seasonId ?? "");
+  const { seasonRef } = useParams<{ seasonRef: string }>();
+  const { data: season, isLoading, error } = useSeasonDetail(seasonRef ?? "");
+
+  useDocumentTitle(season?.name ?? null);
 
   if (isLoading) {
     return <p role="status">Loading season...</p>;
@@ -29,6 +36,11 @@ export default function SeasonDetailPage() {
     return null;
   }
 
+  // A legacy UUID link resolves, then redirects to the canonical slug.
+  if (seasonRef && UUID.test(seasonRef)) {
+    return <Navigate to={seasonPath(season.slug)} replace />;
+  }
+
   return (
     <div className="season-page">
       <div className="season-page__header">
@@ -37,9 +49,7 @@ export default function SeasonDetailPage() {
           {season.is_active ? "Active" : "Completed"}
         </span>
       </div>
-      <p className="season-page__dates">
-        {formatDate(season.start_date)} - {season.end_date ? formatDate(season.end_date) : "present"}
-      </p>
+      <p className="season-page__dates">{formatDateRange(season.start_date, season.end_date)}</p>
 
       {season.sheet_url && (
         <p>
@@ -47,76 +57,27 @@ export default function SeasonDetailPage() {
         </p>
       )}
 
-      {season.overview && <p className="season-page__overview">{season.overview}</p>}
+      {season.overview && (
+        <PlainText className="season-page__overview">{season.overview}</PlainText>
+      )}
 
       {season.champion && (
         <p className="season-page__champion">
-          Champion: <Link to={`/players/${season.champion.id}`}>{season.champion.username}</Link>
+          Champion: <Link to={playerPath(season.champion.slug)}>{season.champion.username}</Link>
         </p>
       )}
 
-      <section aria-labelledby="roster-heading">
-        <h2 id="roster-heading">Roster</h2>
-        {season.roster.length > 0 ? (
-          <ul className="season-page__roster-cards">
-            {season.roster.map((entry) => (
-              <li key={entry.player.id} className="season-roster-card">
-                <div className="season-roster-card__header">
-                  <Link to={`/players/${entry.player.id}`}>{entry.player.username}</Link>
-                  {entry.group_label && (
-                    <span className="season-page__group-label">({entry.group_label})</span>
-                  )}
-                </div>
-                <PokemonTeam
-                  pokemon={entry.pokemon}
-                  size={40}
-                  emptyLabel="No Pokémon currently rostered."
-                />
-                {entry.former_pokemon.length > 0 && (
-                  <details className="roster-history">
-                    <summary>Previously rostered ({entry.former_pokemon.length})</summary>
-                    <PokemonTeam pokemon={entry.former_pokemon} size={32} />
-                  </details>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p>No roster recorded yet.</p>
-        )}
-      </section>
-
       <section aria-labelledby="standings-heading">
         <h2 id="standings-heading">Group Standings</h2>
-        {season.standings.length > 0 ? (
-          season.standings.map((group) => (
-            <div key={group.group_label ?? "ungrouped"} className="standings-group">
-              {group.group_label && <h3>{group.group_label}</h3>}
-              <table className="standings-table">
-                <thead>
-                  <tr>
-                    <th>Player</th>
-                    <th>Wins</th>
-                    <th>Losses</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {group.standings.map((entry) => (
-                    <tr key={entry.player.id}>
-                      <td>
-                        <Link to={`/players/${entry.player.id}`}>{entry.player.username}</Link>
-                      </td>
-                      <td>{entry.wins}</td>
-                      <td>{entry.losses}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ))
-        ) : (
-          <p>No standings available yet.</p>
-        )}
+        <StandingsGroups groups={season.standings} />
+        <p className="season-page__standings-link">
+          <Link to={seasonStandingsPath(season.slug)}>Standings page for this season</Link>
+        </p>
+      </section>
+
+      <section aria-labelledby="roster-heading">
+        <h2 id="roster-heading">Roster</h2>
+        <SeasonRoster roster={season.roster} />
       </section>
 
       <section aria-labelledby="bracket-heading">
@@ -142,7 +103,7 @@ export default function SeasonDetailPage() {
                             : "bracket-match__competitor"
                         }
                       >
-                        <Link to={`/players/${match.home_player.id}`}>{match.home_player.username}</Link>
+                        <Link to={playerPath(match.home_player.slug)}>{match.home_player.username}</Link>
                         <span>
                           {match.series.game_count > 1 ? match.series.home_wins : (match.home_score ?? "-")}
                         </span>
@@ -154,7 +115,7 @@ export default function SeasonDetailPage() {
                             : "bracket-match__competitor"
                         }
                       >
-                        <Link to={`/players/${match.away_player.id}`}>{match.away_player.username}</Link>
+                        <Link to={playerPath(match.away_player.slug)}>{match.away_player.username}</Link>
                         <span>
                           {match.series.game_count > 1 ? match.series.away_wins : (match.away_score ?? "-")}
                         </span>

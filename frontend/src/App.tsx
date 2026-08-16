@@ -2,6 +2,7 @@ import { Link, Navigate, Route, Routes, useLocation } from "react-router-dom";
 
 import ErrorBoundary from "./components/ErrorBoundary";
 import NavSearch from "./components/NavSearch";
+import { HALL_OF_FAME_PATH, STANDINGS_PATH } from "./lib/routes";
 import AdminAccountPage from "./pages/AdminAccountPage";
 import AdminLayout from "./pages/AdminLayout";
 import AdminMatchesPage from "./pages/AdminMatchesPage";
@@ -10,12 +11,15 @@ import AdminPlayersPage from "./pages/AdminPlayersPage";
 import AdminSeasonRosterPage from "./pages/AdminSeasonRosterPage";
 import AdminSeasonsPage from "./pages/AdminSeasonsPage";
 import AdminSitePage from "./pages/AdminSitePage";
+import HallOfFamePage from "./pages/HallOfFamePage";
 import HomePage from "./pages/HomePage";
+import LegacyPlayerRedirect from "./pages/LegacyPlayerRedirect";
 import NotFoundPage from "./pages/NotFoundPage";
 import PlayerDetailPage from "./pages/PlayerDetailPage";
 import PlayersPage from "./pages/PlayersPage";
 import SeasonDetailPage from "./pages/SeasonDetailPage";
 import SeasonsPage from "./pages/SeasonsPage";
+import StandingsPage from "./pages/StandingsPage";
 
 export default function App() {
   const location = useLocation();
@@ -35,6 +39,8 @@ export default function App() {
           </Link>
           <Link to="/players">Players</Link>
           <Link to="/seasons">Seasons</Link>
+          <Link to={STANDINGS_PATH}>Standings</Link>
+          <Link to={HALL_OF_FAME_PATH}>Hall of Fame</Link>
         </div>
         {!isAdminRoute && <NavSearch />}
       </nav>
@@ -44,16 +50,26 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/players" element={<PlayersPage />} />
-            <Route path="/players/:playerId" element={<PlayerDetailPage />} />
+            {/* Canonical player route. Singular, because it addresses one
+                player; /players remains the index. */}
+            <Route path="/player/:playerSlug" element={<PlayerDetailPage />} />
+            {/* Legacy UUID links, kept working: resolves the player and
+                redirects to their canonical slug rather than 404ing. */}
+            <Route path="/players/:playerId" element={<LegacyPlayerRedirect />} />
             <Route path="/seasons" element={<SeasonsPage />} />
-            <Route path="/seasons/:seasonId" element={<SeasonDetailPage />} />
+            <Route path={STANDINGS_PATH} element={<StandingsPage />} />
+            {/* Accepts a slug or a legacy UUID; the page redirects a UUID to
+                the canonical slug form. */}
+            <Route path="/seasons/:seasonRef/standings" element={<StandingsPage />} />
+            <Route path="/seasons/:seasonRef" element={<SeasonDetailPage />} />
+            <Route path={HALL_OF_FAME_PATH} element={<HallOfFamePage />} />
             <Route path="/admin" element={<AdminLayout />}>
               <Route index element={<Navigate to="players" replace />} />
               <Route path="players" element={<AdminPlayersPage />} />
               <Route path="seasons" element={<AdminSeasonsPage />} />
               <Route path="seasons/:seasonId" element={<AdminSeasonRosterPage />} />
               <Route path="matches" element={<AdminMatchesPage />} />
-            <Route path="playoff-rounds" element={<AdminPlayoffRoundsPage />} />
+              <Route path="playoff-rounds" element={<AdminPlayoffRoundsPage />} />
               <Route path="site" element={<AdminSitePage />} />
               <Route path="account" element={<AdminAccountPage />} />
             </Route>

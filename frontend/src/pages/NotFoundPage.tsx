@@ -1,6 +1,9 @@
 import { Link } from "react-router-dom";
 
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
+
 export default function NotFoundPage() {
+  useDocumentTitle("Page not found");
   return (
     <div className="error-page">
       <p className="error-page__code">404</p>

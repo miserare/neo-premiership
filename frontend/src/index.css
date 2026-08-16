@@ -1792,3 +1792,143 @@ table,
   border-radius: var(--radius);
   font-size: 0.9rem;
 }
+
+/* ============================ Player biography =========================== */
+
+.player-page__biography {
+  max-width: 68ch;
+  color: var(--text);
+  margin-bottom: var(--s5);
+}
+
+/* ============================ Home: fixtures ============================= */
+
+.home-page__fixtures {
+  margin-bottom: var(--s6);
+}
+
+.home-page__fixture-group + .home-page__fixture-group {
+  margin-top: var(--s5);
+}
+
+.home-page__fixture-group h3 {
+  margin: 0 0 var(--s2);
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+
+.home-page__fixture-week {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0 0 var(--s3);
+}
+
+/* ============================== Standings ================================ */
+
+/* Between seasons this page shows a finished season. Saying so is the
+   difference between an archive and a table that looks wrong. */
+.standings-page__context {
+  padding: var(--s2) var(--s3);
+  background: var(--surface-2);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.standings-page__more,
+.season-page__standings-link {
+  margin-top: var(--s4);
+  font-size: 0.9rem;
+}
+
+/* ============================= Hall of Fame ============================== */
+
+.hall-of-fame__intro {
+  color: var(--text-muted);
+  max-width: 68ch;
+}
+
+.hall-of-fame__empty {
+  padding: var(--s5);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.hall-of-fame__list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--s5);
+}
+
+.hall-of-fame-entry {
+  padding: var(--s4);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  /* The gold edge is the champion marker for the card; the words beside the
+     star carry the same information for anyone not seeing the colour. */
+  border-left: 3px solid var(--gold);
+  border-radius: var(--radius);
+}
+
+.hall-of-fame-entry__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--s2) var(--s4);
+  margin-bottom: var(--s3);
+}
+
+.hall-of-fame-entry__champion {
+  display: flex;
+  align-items: baseline;
+  gap: var(--s2);
+  margin: 0;
+  font-size: 1.35rem;
+}
+
+.hall-of-fame-entry__star {
+  color: var(--gold);
+}
+
+.hall-of-fame-entry__title {
+  margin: var(--s1) 0 0;
+  color: var(--gold);
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.hall-of-fame-entry__dates,
+.hall-of-fame-entry__fallback-note {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  margin: 0;
+}
+
+.hall-of-fame-entry__description {
+  max-width: 68ch;
+}
+
+.hall-of-fame-entry h3 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin: var(--s4) 0 var(--s2);
+}
+
+.hall-of-fame-entry__links {
+  margin: var(--s4) 0 0;
+  font-size: 0.9rem;
+}

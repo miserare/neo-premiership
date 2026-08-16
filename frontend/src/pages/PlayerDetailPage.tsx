@@ -1,86 +1,59 @@
 import { Link, useParams } from "react-router-dom";
 
-import ExternalLink from "../components/ExternalLink";
-import MatchSeriesLinks from "../components/MatchSeriesLinks";
+import ChampionBadge from "../components/ChampionBadge";
+import Disclosure from "../components/Disclosure";
+import MatchList from "../components/MatchList";
+import PlainText from "../components/PlainText";
 import PokemonTeam from "../components/PokemonTeam";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { usePlayerDetail } from "../hooks/usePlayerDetail";
-import type { MatchRead } from "../types";
+import { formatDateTime } from "../lib/format";
+import { playerPath, seasonPath } from "../lib/routes";
+import type { EloRatingHistoryEntry } from "../types";
 
-function formatDateTime(iso: string | null): string {
-  if (!iso) return "TBD";
-  return new Date(iso).toLocaleString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
+/** How many of each list to show before the disclosure. */
+const PREVIEW_COUNT = 5;
 
-function MatchRow({ match, perspectiveId }: { match: MatchRead; perspectiveId: string }) {
-  const isHome = match.home_player.id === perspectiveId;
-  const opponent = isHome ? match.away_player : match.home_player;
-  const won = match.winner_id === perspectiveId;
-
-  // A multi-game series is scored by games won; otherwise fall back to the
-  // legacy per-match score fields.
-  const isSeries = match.series.game_count > 1;
-  const ownScore = isSeries
-    ? isHome
-      ? match.series.home_wins
-      : match.series.away_wins
-    : isHome
-      ? match.home_score
-      : match.away_score;
-  const opponentScore = isSeries
-    ? isHome
-      ? match.series.away_wins
-      : match.series.home_wins
-    : isHome
-      ? match.away_score
-      : match.home_score;
-
-  const ownTeam = isHome ? match.home_team : match.away_team;
-  const opponentTeam = isHome ? match.away_team : match.home_team;
-
+function EloTable({ entries }: { entries: EloRatingHistoryEntry[] }) {
   return (
-    <li className="match-row">
-      <div className="match-row__main">
-        <span className="match-row__opponent">
-          vs <Link to={`/players/${opponent.id}`}>{opponent.username}</Link>
-        </span>
-        {match.status === "completed" && (
-          <span
-            className={won ? "match-row__result match-row__result--win" : "match-row__result match-row__result--loss"}
-          >
-            {/* A match with no recorded score reads as a bare Win/Loss rather
-                than a placeholder-filled "Win - -". */}
-            {won ? "Win" : "Loss"}
-            {ownScore !== null && opponentScore !== null && ` ${ownScore}-${opponentScore}`}
-          </span>
-        )}
-        <span className="match-row__date">
-          {formatDateTime(match.status === "completed" ? match.completed_at : match.scheduled_at)}
-        </span>
-      </div>
-      {(ownTeam.length > 0 || opponentTeam.length > 0) && (
-        <div className="match-row__teams">
-          <PokemonTeam pokemon={ownTeam} size={28} />
-          <span className="match-row__teams-divider">vs</span>
-          <PokemonTeam pokemon={opponentTeam} size={28} />
-        </div>
-      )}
-      <div className="match-row__links">
-        <MatchSeriesLinks match={match} />
-        {match.youtube_url && <ExternalLink href={match.youtube_url}>Video</ExternalLink>}
-      </div>
-    </li>
+    <div className="table-scroll">
+      <table className="players-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Opponent</th>
+            <th>Result</th>
+            <th>Before</th>
+            <th>Change</th>
+            <th>After</th>
+          </tr>
+        </thead>
+        <tbody>
+          {entries.map((entry) => (
+            <tr key={entry.match_id}>
+              <td>{formatDateTime(entry.occurred_at)}</td>
+              <td>
+                <Link to={playerPath(entry.opponent_slug)}>{entry.opponent_username}</Link>
+              </td>
+              <td>{entry.result === 1 ? "Win" : "Loss"}</td>
+              <td>{entry.rating_before}</td>
+              <td>{entry.rating_change > 0 ? `+${entry.rating_change}` : entry.rating_change}</td>
+              <td>{entry.rating_after}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   );
 }
 
 export default function PlayerDetailPage() {
-  const { playerId } = useParams<{ playerId: string }>();
-  const { data: player, isLoading, error } = usePlayerDetail(playerId ?? "");
+  const { playerSlug } = useParams<{ playerSlug: string }>();
+  const { data: player, isLoading, error } = usePlayerDetail(playerSlug ?? "");
+
+  // null while loading: the title is not known yet, and guessing would flash
+  // the site name and then replace it.
+  useDocumentTitle(player?.username ?? null);
 
   if (isLoading) {
     return <p role="status">Loading player...</p>;
@@ -98,6 +71,12 @@ export default function PlayerDetailPage() {
     return null;
   }
 
+  // Already newest-first from the API, so the recent list is simply its head -
+  // both views read the same array and neither issues a second request.
+  const completed = player.completed_matches;
+  const recent = completed.slice(0, PREVIEW_COUNT);
+  const eloHistory = player.elo_history;
+
   return (
     <div className="player-page">
       <div className="player-page__header">
@@ -106,6 +85,12 @@ export default function PlayerDetailPage() {
           {player.is_active ? "Active" : "Inactive"}
         </span>
       </div>
+
+      <ChampionBadge championships={player.championships} />
+
+      {player.biography && (
+        <PlainText className="player-page__biography">{player.biography}</PlainText>
+      )}
 
       <dl className="player-page__stats">
         <div>
@@ -128,39 +113,28 @@ export default function PlayerDetailPage() {
         </div>
       </dl>
 
+      <section aria-labelledby="recent-heading">
+        <h2 id="recent-heading">Recent Matches</h2>
+        <MatchList matches={recent} perspectiveId={player.id} empty="No completed matches yet." />
+      </section>
+
       <section aria-labelledby="elo-history-heading">
         <h2 id="elo-history-heading">Elo History</h2>
-        {player.elo_history.length > 0 ? (
-          <div className="table-scroll">
-            <table className="players-table">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Opponent</th>
-                  <th>Result</th>
-                  <th>Before</th>
-                  <th>Change</th>
-                  <th>After</th>
-                </tr>
-              </thead>
-              <tbody>
-                {player.elo_history.map((entry) => (
-                  <tr key={entry.match_id}>
-                    <td>{formatDateTime(entry.occurred_at)}</td>
-                    <td>
-                      <Link to={`/players/${entry.opponent_id}`}>{entry.opponent_username}</Link>
-                    </td>
-                    <td>{entry.result === 1 ? "Win" : "Loss"}</td>
-                    <td>{entry.rating_before}</td>
-                    <td>{entry.rating_change > 0 ? `+${entry.rating_change}` : entry.rating_change}</td>
-                    <td>{entry.rating_after}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        ) : (
+        {eloHistory.length === 0 ? (
           <p>No Elo-rated matches yet.</p>
+        ) : eloHistory.length <= PREVIEW_COUNT ? (
+          // Nothing is hidden, so there is nothing to expand - a control here
+          // would only ever be a no-op.
+          <EloTable entries={eloHistory} />
+        ) : (
+          <Disclosure
+            showLabel={`Show full Elo history (${eloHistory.length} matches)`}
+            hideLabel="Show recent five"
+          >
+            {(expanded) => (
+              <EloTable entries={expanded ? eloHistory : eloHistory.slice(0, PREVIEW_COUNT)} />
+            )}
+          </Disclosure>
         )}
       </section>
 
@@ -171,7 +145,7 @@ export default function PlayerDetailPage() {
             {player.season_records.map((record) => (
               <li key={record.season_id} className="player-season-card">
                 <div className="player-season-card__header">
-                  <Link to={`/seasons/${record.season_id}`}>{record.season_name}</Link>
+                  <Link to={seasonPath(record.season_slug)}>{record.season_name}</Link>
                   <span className="player-season-card__record">
                     {record.wins}-{record.losses}
                   </span>
@@ -194,27 +168,34 @@ export default function PlayerDetailPage() {
 
       <section aria-labelledby="backlog-heading">
         <h2 id="backlog-heading">Upcoming Matches</h2>
-        {player.backlog.length > 0 ? (
-          <ul className="match-list">
-            {player.backlog.map((match) => (
-              <MatchRow key={match.id} match={match} perspectiveId={player.id} />
-            ))}
-          </ul>
-        ) : (
-          <p>No upcoming matches.</p>
-        )}
+        <MatchList matches={player.backlog} perspectiveId={player.id} empty="No upcoming matches." />
       </section>
 
       <section aria-labelledby="history-heading">
         <h2 id="history-heading">Match History</h2>
-        {player.completed_matches.length > 0 ? (
-          <ul className="match-list">
-            {player.completed_matches.map((match) => (
-              <MatchRow key={match.id} match={match} perspectiveId={player.id} />
-            ))}
-          </ul>
+        {completed.length <= PREVIEW_COUNT ? (
+          // Everything is already in Recent Matches above; repeating it would
+          // just be the same list twice.
+          <p>
+            {completed.length === 0
+              ? "No completed matches yet."
+              : "Every completed match is shown under Recent Matches above."}
+          </p>
         ) : (
-          <p>No completed matches yet.</p>
+          <Disclosure
+            showLabel={`View all matches (${completed.length})`}
+            hideLabel="Show fewer matches"
+          >
+            {(expanded) =>
+              expanded ? (
+                <MatchList
+                  matches={completed}
+                  perspectiveId={player.id}
+                  empty="No completed matches yet."
+                />
+              ) : null
+            }
+          </Disclosure>
         )}
       </section>
     </div>

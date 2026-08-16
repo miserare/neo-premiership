@@ -21,10 +21,12 @@ export function renderAtRoute(
 ): RenderResult {
   return render(
     <MemoryRouter initialEntries={[route]}>
+      {/* Outside <Routes>, so it reports the location whatever matched -
+          including a redirect to a different URL under the same pattern. */}
+      <LandedAt />
       <Routes>
         <Route path={path} element={element} />
         {extraRoutes}
-        <Route path="*" element={<LandedAt />} />
       </Routes>
     </MemoryRouter>,
   );

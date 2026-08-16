@@ -1,12 +1,12 @@
 import { Link, useSearchParams } from "react-router-dom";
 
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useSeasons } from "../hooks/useSeasons";
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
+import { formatDateRange } from "../lib/format";
+import { playerPath, seasonPath } from "../lib/routes";
 
 export default function SeasonsPage() {
+  useDocumentTitle("Seasons");
   const [searchParams] = useSearchParams();
   const q = searchParams.get("q") ?? "";
   const { data: seasons, isLoading, error } = useSeasons(q);
@@ -37,13 +37,18 @@ export default function SeasonsPage() {
         <ul className="seasons-list">
           {seasons.map((season) => (
             <li key={season.id} className="season-card">
-              <Link to={`/seasons/${season.id}`}>
+              <Link to={seasonPath(season.slug)}>
                 <h2>{season.name}</h2>
               </Link>
               <p className="season-card__dates">
-                {formatDate(season.start_date)} - {season.end_date ? formatDate(season.end_date) : "present"}
+                {formatDateRange(season.start_date, season.end_date)}
               </p>
-              {season.champion && <p className="season-card__champion">Champion: {season.champion.username}</p>}
+              {season.champion && (
+                <p className="season-card__champion">
+                  Champion:{" "}
+                  <Link to={playerPath(season.champion.slug)}>{season.champion.username}</Link>
+                </p>
+              )}
             </li>
           ))}
         </ul>

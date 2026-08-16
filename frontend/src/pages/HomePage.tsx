@@ -1,12 +1,13 @@
 import { Link } from "react-router-dom";
 
 import ExternalLink from "../components/ExternalLink";
+import MatchList from "../components/MatchList";
+import PlainText from "../components/PlainText";
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { useHome } from "../hooks/useHome";
-import type { HomeLink } from "../types";
-
-function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
-}
+import { formatDate } from "../lib/format";
+import { playerPath, seasonPath } from "../lib/routes";
+import type { HomeFixtures, HomeLink } from "../types";
 
 /** The standings link points inside the site by default, but an admin can pin
  * an outbound URL - so the element depends on the link, not the card. */
@@ -27,7 +28,52 @@ function LinkCard({ heading, link, empty }: { heading: string; link: HomeLink | 
   );
 }
 
+/**
+ * This week's matches, and whatever an administrator has pinned.
+ *
+ * Two lists because they are two different claims - one about the calendar, one
+ * editorial - and because that is what stops a featured match in the current
+ * week appearing twice. The week is decided server-side in the league's own
+ * time zone, so this only renders the answer.
+ */
+function Fixtures({ fixtures, seasonName }: { fixtures: HomeFixtures; seasonName: string | null }) {
+  const weekLabel = `${formatDate(fixtures.week_start)} - ${formatDate(fixtures.week_end)}`;
+
+  return (
+    <section className="home-page__fixtures" aria-labelledby="fixtures-heading">
+      <h2 id="fixtures-heading">Matchday</h2>
+
+      {fixtures.featured.length > 0 && (
+        <div className="home-page__fixture-group">
+          <h3>Featured</h3>
+          <MatchList
+            matches={fixtures.featured}
+            labelFor={(match) => match.round_label}
+            featuredFor={() => true}
+            empty="Nothing featured."
+          />
+        </div>
+      )}
+
+      <div className="home-page__fixture-group">
+        <h3>This week</h3>
+        <p className="home-page__fixture-week">{weekLabel}</p>
+        <MatchList
+          matches={fixtures.this_week}
+          labelFor={(match) => match.round_label}
+          empty={
+            seasonName
+              ? `No ${seasonName} matches are scheduled this week.`
+              : "No matches are scheduled this week."
+          }
+        />
+      </div>
+    </section>
+  );
+}
+
 export default function HomePage() {
+  useDocumentTitle();
   const { data, isLoading, error } = useHome();
   const season = data?.current_season ?? null;
 
@@ -43,7 +89,7 @@ export default function HomePage() {
             <span className={season.is_active ? "badge badge--active" : "badge badge--inactive"}>
               {season.is_active ? "In season" : "Off-season"}
             </span>
-            <Link to={`/seasons/${season.id}`}>{season.name}</Link>
+            <Link to={seasonPath(season.slug)}>{season.name}</Link>
           </div>
         ) : (
           <p>No seasons have been scheduled yet.</p>
@@ -65,6 +111,8 @@ export default function HomePage() {
             <LinkCard heading="Table" link={data.table} empty="Not available yet." />
           </section>
 
+          <Fixtures fixtures={data.fixtures} seasonName={season?.name ?? null} />
+
           {season && (
             <section className="home-page__roster" aria-labelledby="roster-heading">
               <h2 id="roster-heading">{season.name} roster</h2>
@@ -72,7 +120,7 @@ export default function HomePage() {
                 <ul className="home-page__roster-list">
                   {season.roster.map((player) => (
                     <li key={player.id}>
-                      <Link to={`/players/${player.id}`}>{player.username}</Link>
+                      <Link to={playerPath(player.slug)}>{player.username}</Link>
                     </li>
                   ))}
                 </ul>
@@ -90,7 +138,9 @@ export default function HomePage() {
                   <li key={announcement.id} className="announcement-card">
                     <h3>{announcement.title}</h3>
                     <p className="announcement-card__date">{formatDate(announcement.published_at)}</p>
-                    <p>{announcement.body}</p>
+                    {/* Plain text with its newlines kept: a fixture list loses
+                        its shape if they are collapsed. */}
+                    <PlainText>{announcement.body}</PlainText>
                     {announcement.link_url && <ExternalLink href={announcement.link_url}>Learn more</ExternalLink>}
                   </li>
                 ))}

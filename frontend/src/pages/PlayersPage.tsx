@@ -1,16 +1,12 @@
 import { Link, useSearchParams } from "react-router-dom";
 
+import { useDocumentTitle } from "../hooks/useDocumentTitle";
 import { usePlayers } from "../hooks/usePlayers";
-
-function formatJoinDate(isoDate: string): string {
-  return new Date(isoDate).toLocaleDateString(undefined, {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-  });
-}
+import { formatDate } from "../lib/format";
+import { playerPath } from "../lib/routes";
 
 export default function PlayersPage() {
+  useDocumentTitle("Players");
   const [searchParams] = useSearchParams();
   const q = searchParams.get("q") ?? "";
   const { data: players, isLoading, error } = usePlayers(q);
@@ -53,10 +49,10 @@ export default function PlayersPage() {
             {players.map((player) => (
               <tr key={player.id}>
                 <td>
-                  <Link to={`/players/${player.id}`}>{player.username}</Link>
+                  <Link to={playerPath(player.slug)}>{player.username}</Link>
                 </td>
                 <td>{player.elo_rating}</td>
-                <td>{formatJoinDate(player.join_date)}</td>
+                <td>{formatDate(player.join_date)}</td>
                 <td>
                   <span className={player.is_active ? "badge badge--active" : "badge badge--inactive"}>
                     {player.is_active ? "Active" : "Inactive"}
